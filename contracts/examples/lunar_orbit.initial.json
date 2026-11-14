@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "feature": "lunar_orbit",
+    "endpoint": "initial",
+    "contract_version": "0.1.0",
+    "source": "example",
+    "frame": "MOON_BODY_FIXED",
+    "units": {
+      "distance": "km",
+      "velocity": "km/s",
+      "time": "s",
+      "angle": "deg",
+      "gravity_anomaly": "mGal"
+    }
+  },
+  "t": "2026-01-01T00:00:00Z",
+  "preset": "LRO",
+  "pos_km": [
+    1787.4,
+    0.0,
+    0.0
+  ],
+  "vel_kms": [
+    0.0,
+    -0.004757522579999898,
+    1.6561940300279268
+  ]
+}
