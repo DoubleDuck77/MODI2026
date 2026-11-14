@@ -101,16 +101,18 @@ Bez Dockera: `run_local.py`, patrz niżej.
 
 ### Bez Dockera (Windows i inne systemy)
 
-Strona `/sim.html` (Powierzchnia + Orbita) uruchamia się jednym poleceniem i liczy dokładnie to samo co kontener.
+Strona `/sim.html` (Powierzchnia + Orbita) uruchamia się jednym poleceniem z tymi samymi wersjami, kodem i danymi co kontener.
 
 **Wymagania:**
-- Python **3.12**: `winget install -e --id Python.Python.3.12` albo instalator 3.12 z python.org. Inna wersja nie zadziała: numba 0.61 i numpy 2.2 nie mają pakietów dla 3.14.
+- Python **3.12 x64**: `winget install -e --id Python.Python.3.12 --architecture x64` albo instalator „Windows installer (64-bit)” 3.12 z python.org.
+  Inną wersję skrypt odrzuca, bo Docker ma 3.12. Na 3.14 numba 0.61 i numpy 2.2 nie mają pakietów, a dla Windows na ARM i 32-bit brakuje
+  pakietów numba, llvmlite i pandas.
 - Git: `winget install -e --id Git.Git`, plus dostęp do repo `github.com/DoubleDuck77/MODI2026`.
 - ~1 GB na dysku (klon ~460 MB z teksturami i efemerydami, do tego `.venv`).
 - RAM ≥ 8 GB. Teren przy biegunie zajmuje chwilowo do ~4.3 GB.
 - Internet przy pierwszym starcie (pip) i w przeglądarce, bo Three.js idzie z CDN jsdelivr.
 
-**Kroki (PowerShell):**
+**Kroki (PowerShell):** po `winget install` otwórz **nowe** okno PowerShell. W starym oknie `py` i `git` nie będą jeszcze widoczne.
 
 ```powershell
 git clone https://github.com/DoubleDuck77/MODI2026.git
@@ -123,13 +125,17 @@ Pierwsze uruchomienie tworzy `.venv` i instaluje pakiety (kilka minut). Kolejne 
 instalowane ponownie tylko po zmianie `backend/requirements.txt`. Ctrl+C zatrzymuje serwer.
 Na Linuksie i macOS: `python3.12 run_local.py`.
 
-**Dlaczego wyniki są takie same jak w Dockerze:**
-- Ten sam Python 3.12 co `python:3.12-slim`. Skrypt odmawia startu na innej wersji.
+**Dlaczego wyniki zgadzają się z Dockerem:**
+- Python 3.12, jak `python:3.12-slim` (wersja poprawkowa może być inna). Skrypt odmawia startu na innej wersji.
 - Te same przypięte wersje z `backend/requirements.txt`: numpy 2.2.1, numba 0.61.2 (wymusza llvmlite 0.44.0),
   pandas 2.2.3. Pozostałe różnice z obrazem dotyczą tylko pakietów serwera HTTP.
 - W `.venv` nie ma pygame, więc `app/core/legacy.py` podstawia tę samą atrapę co w kontenerze.
 - Te same dane z repo (`Textures/` z mapami v3, `coords/`) i ten sam proces: `uvicorn app.main:app` z `backend/`
   bez `--reload`. Numba używa zwykłego `@njit` (bez `fastmath`/`parallel`), więc wynik nie zależy od liczby rdzeni.
+- Na Linuksie odpowiedzi są identyczne bajt w bajt z kontenerem (sprawdzone na 7 endpointach `lunar_surface`/`lunar_orbit`).
+  Na Windowsie numpy i numba są kompilowane MSVC i liczą funkcje trygonometryczne inną biblioteką matematyczną,
+  więc ostatnie cyfry mogą się różnić. Fizycznie nie ma to znaczenia. Wyniki porównuj z tolerancją (np. względną 1e-9),
+  a nie bajtowo.
 
 **Sprawdzenie** (w PowerShellu `curl` to alias `Invoke-WebRequest`, dlatego `curl.exe`):
 

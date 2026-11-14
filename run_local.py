@@ -20,6 +20,7 @@ import hashlib
 import os
 import subprocess
 import sys
+import sysconfig
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent
@@ -44,9 +45,17 @@ def check_python() -> None:
     if sys.version_info[:2] != PY_VERSION:
         fail(
             f"Potrzebny jest Python 3.12 (jak w Dockerze), a uruchomiono {sys.version.split()[0]}.\n"
-            "  Instalacja na Windows:  winget install -e --id Python.Python.3.12\n"
-            "                          (albo instalator 3.12 z https://www.python.org/downloads/)\n"
+            "  Instalacja na Windows:  winget install -e --id Python.Python.3.12 --architecture x64\n"
+            "                          (albo instalator 3.12 64-bit z https://www.python.org/downloads/)\n"
             "  Potem uruchom:          py -3.12 run_local.py"
+        )
+    # numba/llvmlite/pandas mają koła dla Windows tylko w wersji win_amd64 (brak win32 i win_arm64)
+    if os.name == "nt" and sysconfig.get_platform() != "win-amd64":
+        fail(
+            f"Potrzebny jest Python 3.12 w wersji x64, a uruchomiono {sysconfig.get_platform()}.\n"
+            "  numba, llvmlite i pandas nie mają pakietów dla tej platformy (32-bit / ARM).\n"
+            "  Instalacja:  winget install -e --id Python.Python.3.12 --architecture x64\n"
+            "  Potem uruchom skrypt Pythonem x64 (py -0p pokazuje zainstalowane wersje i ich ścieżki)."
         )
 
 
