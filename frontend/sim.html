@@ -38,5 +38,19 @@
   </main>
 
   <script type="module" src="/js/sim/main.js"></script>
+  <script>
+    window.addEventListener("click", (event) => {
+      const btn = event.target.closest("#mode-charts");
+      if (!btn || !event.isTrusted) return;
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      const targetUrl = window.location.protocol === "file:"
+        ? "dwa_wykresy.html"
+        : "/dwa_wykresy.html";
+      window.location.assign(targetUrl);
+    }, true);
+  </script>
 </body>
 </html>
