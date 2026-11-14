@@ -218,7 +218,7 @@ def load_earth_textures():
         if _download_first_available(EARTH_DAY_URLS, dl_path, "Tekstura Ziemi (Blue Marble)"):
             day_path = dl_path
 
-    night_path = next((p for p in ["Textures/earth_night8K.jpg", "Textures/earth_night8K.png", "Textures/earth_night.jpg"] if os.path.exists(p)), None)
+    night_path = next((p for p in ["Textures/earrth_night8K.jpg", "Textures/earth_night8K.jpg", "Textures/earth_night8K.png", "Textures/earth_night.jpg"] if os.path.exists(p)), None)
     clouds_path = next((p for p in ["Textures/earth_clouds8K.jpg", "Textures/earth_clouds8K.png", "Textures/earth_clouds.jpg"] if os.path.exists(p)), None)
 
     def _to_rgb_array(path):
@@ -794,7 +794,7 @@ def draw_telescopic_earth(screen, ex, ey, r_earth_exact, cw, ch, sun_earth_dir, 
 
 
 def load_year_data(year):
-    filepath = f"Coords/{year}.csv"
+    filepath = f"coords/{year}.csv"
     if os.path.exists(filepath):
         times = []
         rows = []
