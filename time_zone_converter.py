@@ -791,6 +791,7 @@ def _pobierz_strefe(strefa_docelowa: str):
     return ZoneInfo(strefa_docelowa)
 
 #do trej funkcji wstawiamy datę w formacie yyyy-mm-dd hh:mm jako string i strefę jako string w formacie UTC+01, UTC-12:30 itd. a także prefiks IANA np Europe/Warsaw
+#Konwertuje z UTC na inne
 def convert_time_zone(data_utc_str: str, strefa_docelowa: str) -> str:
     """
     Konwertuje czas z formatu 'YYYY-MM-DD HH:MM' (UTC) na podaną strefę czasową
@@ -804,9 +805,23 @@ def convert_time_zone(data_utc_str: str, strefa_docelowa: str) -> str:
 
     return dt_lokalny.strftime("%Y-%m-%d %H:%M")
 
+#konwertuje na UTC
+def convert_to_utc(data_lokalna_str: str, strefa_zrodlowa: str, fold: int = 0) -> str:
+    """
+    Konwertuje czas z formatu 'YYYY-MM-DD HH:MM' z podanej strefy czasowej
+    (nazwy IANA z obsługą DST, np. 'Europe/Warsaw', lub stałego przesunięcia
+    typu 'UTC+11', 'UTC-11', 'UTC+11:30') na czas UTC ('YYYY-MM-DD HH:MM').
+    Parametr `fold` (0 lub 1) rozstrzyga niejednoznaczność podczas cofania zegarów (zmiana czasu na zimowy).
+    """
+    tz = _pobierz_strefe(strefa_zrodlowa)
+    dt_lokalny = datetime.strptime(data_lokalna_str.strip(), "%Y-%m-%d %H:%M").replace(
+        tzinfo=tz,
+        fold=fold,
+    )
+    dt_utc = dt_lokalny.astimezone(timezone.utc)
 
-# Przykłady użycia:
-print(convert_time_zone("2026-10-13 15:34", "UTC+1"))  # 2026-10-14 03:04
-print(convert_time_zone("2026-10-13 15:34", "UTC-11"))     # 2026-10-13 04:34
-print(convert_time_zone("2026-10-13 15:34", "Africa/Porto-novo"))  # 2026-10-14 01:04
-print(define_IANA_zone("Benin"))
+    return dt_utc.strftime("%Y-%m-%d %H:%M")
+
+
+
+
