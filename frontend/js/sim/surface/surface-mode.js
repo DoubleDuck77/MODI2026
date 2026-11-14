@@ -91,7 +91,10 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(BASE_FOV / DEG, 1, 0.0005, 20000);
   camera.position.set(0, 0, 0);
-  const sky = createSky(scene);
+  const sky = createSky(scene, renderer);
+  api.getJson(endpoint('lunar_surface.stars'), {}, { cache: true })
+    .then((f) => sky.setStars(f))
+    .catch((err) => setStatus(`Błąd gwiazd: ${err?.message ?? err}`));
 
   // --- stan (newlunar.py:1746-1772) ---
   let camAz = 0;
@@ -104,6 +107,7 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
   let statusMsg = '';
   let statusTimer = 0;
   let animTime = 0;
+  let animFrozen = false;   // tylko debug: stały czas animacji chmur do porównań z pygame
 
   // --- panele DOM ---
   const topLeft = document.createElement('div');
@@ -226,10 +230,33 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
       .catch((err) => { if (err?.name !== 'AbortError') setStatus(`Błąd nieba: ${err?.message ?? err}`); });
   }
 
+  // Obrót Ziemi między próbkami nieba: osie ECEF obracają się wokół osi Z z szybkością GMST
+  // z newlunar.get_topocentric_vectors (360.98564736629°/dobę) — tylko interpolacja do rysowania.
+  const EARTH_RATE = (360.98564736629 * DEG) / 86_400_000;   // rad/ms
+  const rotateAxes = (A, dtMs) => {
+    const th = EARTH_RATE * dtMs;
+    const c = Math.cos(th);
+    const s = Math.sin(th);
+    const [x, y, z] = A;
+    return [x.map((v, i) => c * v + s * y[i]), y.map((v, i) => -s * x[i] + c * v), z];
+  };
+  // Gram-Schmidt bez iloczynu wektorowego: baza [N, E, U] jest lewoskrętna, więc Z × X po
+  // składowych dałoby −Y.
+  const orthonormal = ([x, y, z]) => {
+    const Z = new THREE.Vector3(...z).normalize();
+    const X = new THREE.Vector3(...x);
+    X.addScaledVector(Z, -X.dot(Z)).normalize();
+    const Y = new THREE.Vector3(...y);
+    Y.addScaledVector(Z, -Y.dot(Z)).addScaledVector(X, -Y.dot(X)).normalize();
+    return [X.toArray(), Y.toArray(), Z.toArray()];
+  };
+
   /** Stan nieba w chwili clock.t: liniowa inter/ekstrapolacja między dwiema ostatnimi odpowiedziami. */
   function skyAt(tMs) {
     if (!skyCurr) return null;
-    if (!skyPrev || skyCurr._tMs === skyPrev._tMs) return { ...skyCurr, _f: 0, _base: skyCurr, _dtMs: 0 };
+    if (!skyPrev || skyCurr._tMs === skyPrev._tMs) {
+      return { ...skyCurr, earth_axes_enu: rotateAxes(skyCurr.earth_axes_enu, tMs - skyCurr._tMs), _f: 0, _base: skyCurr, _dtMs: 0 };
+    }
     const f = Math.max(-1, Math.min(3, (tMs - skyPrev._tMs) / (skyCurr._tMs - skyPrev._tMs)));
     const lerp = (a, b) => a + (b - a) * f;
     const lv = (a, b) => a.map((x, i) => lerp(x, b[i]));
@@ -260,6 +287,12 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
       sun_from_earth_enu: nv(P.sun_from_earth_enu, C.sun_from_earth_enu),
       moon_from_earth_enu_km: lv(P.moon_from_earth_enu_km, C.moon_from_earth_enu_km),
       ecliptic_to_enu: C.ecliptic_to_enu.map((row, i) => nv(P.ecliptic_to_enu[i], row)),
+      sun_distance_from_earth_km: lerp(P.sun_distance_from_earth_km, C.sun_distance_from_earth_km),
+      earth_axes_enu: orthonormal((() => {
+        const Ap = rotateAxes(P.earth_axes_enu, tMs - P._tMs);
+        const Ac = rotateAxes(C.earth_axes_enu, tMs - C._tMs);
+        return Ac.map((row, i) => lv(Ap[i], row));
+      })()),
       _f: f,
       _base: C,
       _dtMs: tMs - C._tMs,
@@ -464,7 +497,7 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
     raf = requestAnimationFrame(frame);
     const dt = lastFrame ? Math.min(0.1, (now - lastFrame) / 1000) : 0;
     lastFrame = now;
-    animTime += dt;
+    if (!animFrozen) animTime += dt;
     if (statusTimer > 0) statusTimer = Math.max(0, statusTimer - dt);
 
     if (clock.playing) {
@@ -487,7 +520,7 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
         earthAltRad: view.earth.alt_deg * DEG,
         redGlow: view.eclipse_red_glow,
       });
-      sky.update(view, { camera, fov, size, clockMs: clock.t, animTime, horizonAt, labels });
+      sky.update(view, { camera, fov, size, camAlt, camAz, clockMs: clock.t, yearStartMs: yearStartMs(timeParts(clock.t).year), animTime, horizonAt, labels });
     }
     renderer.render(scene, camera);
     renderHud(view);
@@ -513,6 +546,8 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
     scene, camera, renderer,
     get terrain() { return terrainGroup; },
     get patch() { return patch; },
+    get sky() { return skyAt(clock.t); },
+    setAnimTime(v) { animTime = v; animFrozen = true; },
     setCamera(altDeg, azDeg, fovDeg = BASE_FOV / DEG) {
       camAlt = altDeg * DEG; camAz = azDeg * DEG; fov = targetFov = fovDeg * DEG;
     },

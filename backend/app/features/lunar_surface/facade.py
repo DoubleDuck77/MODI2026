@@ -23,6 +23,7 @@ from app.features.lunar_surface.contract import (
     HorizonProfile,
     LunarSky,
     LunarTerrainPatch,
+    StarField,
     SunInSky,
     SurfaceQuery,
     TerrainQuery,
@@ -183,9 +184,30 @@ class LunarSurfaceFacade(BaseFacade):
             dark_side_exposure=dark_side_exposure,
             sun_from_earth_enu=_vec(data["sun_from_earth_enu"]),
             moon_from_earth_enu_km=_vec(data["moon_from_earth_enu"]),
+            sun_distance_from_earth_km=float(data["sun_dist_from_earth"]),
             earth_axes_enu=tuple(_vec(a) for a in data["ecef_axes_enu"]),
             ecliptic_to_enu=tuple(_vec(row) for row in ecl_to_enu),
         )
+
+    def stars(self) -> StarField:
+        """Gwiazdy dokładnie jak w ``newlunar.main()`` (``newlunar.py:1774-1785``).
+
+        ``np.random.seed(42)`` + kolejne wywołania globalnego generatora to ta sama sekwencja co
+        ``RandomState(42)`` — bez ruszania globalnego stanu numpy w procesie serwera.
+        """
+        rng = np.random.RandomState(42)
+        n_stars = 1200
+        star_lam = rng.uniform(0, 2 * np.pi, n_stars)
+        star_beta = np.arcsin(rng.uniform(-1, 1, n_stars))
+        star_mags = rng.randint(90, 255, n_stars)
+        stars_ecl = np.stack([
+            np.cos(star_beta) * np.cos(star_lam),
+            np.cos(star_beta) * np.sin(star_lam),
+            np.sin(star_beta),
+        ], axis=-1)
+        meta = self._meta("stars")
+        meta.frame = ReferenceFrame.ECLIPTIC_J2000_GEOCENTRIC
+        return StarField(meta=meta, ecliptic_xyz=[_vec(v) for v in stars_ecl], brightness=star_mags.tolist())
 
     def terrain(self, q: TerrainQuery) -> LunarTerrainPatch:
         with self._lock:

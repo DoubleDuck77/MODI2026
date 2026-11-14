@@ -65,8 +65,22 @@ class LunarSky(FeatureResponse):
     dark_side_exposure: float
     sun_from_earth_enu: Vec3T
     moon_from_earth_enu_km: Vec3T
+    sun_distance_from_earth_km: float
     earth_axes_enu: Tuple[Vec3T, Vec3T, Vec3T] = Field(description="Osie X, Y, Z układu ECEF Ziemi w ENU obserwatora")
     ecliptic_to_enu: Tuple[Vec3T, Vec3T, Vec3T] = Field(description="Wiersze N, E, U: v_enu = M · v_ekliptyka_J2000")
+
+
+class StarField(FeatureResponse):
+    """Gwiazdy tła newlunar (losowe, seed 42): kierunki w ekliptyce J2000 i jasność 90..254."""
+
+    ecliptic_xyz: List[Vec3T]
+    brightness: List[int]
+
+    @model_validator(mode="after")
+    def _same_length(self) -> "StarField":
+        if len(self.ecliptic_xyz) != len(self.brightness):
+            raise ValueError("ecliptic_xyz i brightness muszą mieć tę samą długość")
+        return self
 
 
 # --- Teren ------------------------------------------------------------------------------

@@ -1,0 +1,36 @@
+{
+  "meta": {
+    "feature": "lunar_surface",
+    "endpoint": "stars",
+    "contract_version": "0.1.0",
+    "source": "example",
+    "frame": "ECLIPTIC_J2000_GEOCENTRIC",
+    "units": {
+      "angle": "deg",
+      "distance": "km",
+      "elevation": "m"
+    }
+  },
+  "ecliptic_xyz": [
+    [
+      -0.6037231639407626,
+      0.6072222227780075,
+      0.5165263918580452
+    ],
+    [
+      0.29499260799998017,
+      -0.09438729372520277,
+      -0.950826167082397
+    ],
+    [
+      -0.03321016755771419,
+      -0.2922900695503574,
+      -0.9557528969420055
+    ]
+  ],
+  "brightness": [
+    215,
+    228,
+    138
+  ]
+}
