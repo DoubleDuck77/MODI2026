@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Współrzędne miejsc, strefa czasowa i zakres dat</title>
+  <title>Oblicz położenie ciał niebieskich oraz ilość światła</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
   <style>
     * {
       box-sizing: border-box;
@@ -14,10 +17,85 @@
       margin: 0;
       padding: 0;
       min-height: 100vh;
-      background-color: #000000;
+      background-color: #030406;
       color: #ffffff;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-family: 'JetBrains Mono', 'Space Mono', monospace;
       color-scheme: dark;
+      overflow-x: hidden;
+    }
+
+    /* --- Siatka telemetryczna w tle (jak na stronie wzorcowej) --- */
+    body {
+      background-image:
+        linear-gradient(to right, rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+
+    /* --- Warstwa rysunków orbitalnych i topograficznych w tle --- */
+    .space-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      user-select: none;
+      overflow: hidden;
+    }
+
+    .space-backdrop svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font-family: inherit;
+    }
+
+    /* --- Pogrubione narożniki HUD na ramkach (jak na stronie wzorcowej) --- */
+    .hud-brackets {
+      position: relative;
+    }
+
+    .hud-brackets::before,
+    .hud-brackets::after {
+      content: '';
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      pointer-events: none;
+      z-index: 10;
+      transition: border-color 0.2s ease;
+    }
+
+    .hud-brackets::before {
+      top: -1px;
+      left: -1px;
+      border-top: 2px solid rgba(255, 255, 255, 0.72);
+      border-left: 2px solid rgba(255, 255, 255, 0.72);
+    }
+
+    .hud-brackets::after {
+      bottom: -1px;
+      right: -1px;
+      border-bottom: 2px solid rgba(255, 255, 255, 0.72);
+      border-right: 2px solid rgba(255, 255, 255, 0.72);
+    }
+
+    .hud-brackets:hover::before,
+    .hud-brackets:hover::after {
+      border-color: #38bdf8;
+    }
+
+    .top-panel,
+    .chart-count-bar,
+    .charts-section,
+    .interval-energy-section {
+      position: relative;
+      z-index: 1;
     }
 
     .top-panel {
@@ -25,7 +103,35 @@
       padding: clamp(20px, 3vw, 34px) clamp(16px, 3.5vw, 48px) clamp(14px, 2vw, 22px);
       display: flex;
       flex-direction: column;
-      gap: clamp(20px, 2.6vw, 30px);
+      gap: clamp(16px, 2.2vw, 26px);
+    }
+
+    /* --- Główny tytuł na samej górze --- */
+    .main-title {
+      margin: 0;
+      text-align: center;
+      font-size: clamp(1.3rem, 2.2vw, 1.95rem);
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: #ffffff;
+    }
+
+    /* --- Sekcja wyboru typu wykresu --- */
+    .options-section {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .options-prompt {
+      margin: 0;
+      text-align: center;
+      font-size: clamp(1.18rem, 1.6vw, 1.45rem);
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      color: #ffffff;
     }
 
     /* --- Przełącznik liczby wykresów (1 lub 2) przed sekcją wykresów i miejsc --- */
@@ -48,9 +154,9 @@
     .segmented-switch {
       display: inline-flex;
       align-items: center;
-      background-color: #000000;
-      border: 1.5px solid #ffffff;
-      border-radius: 6px;
+      background-color: #090b10;
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      border-radius: 0;
       overflow: hidden;
     }
 
@@ -59,9 +165,10 @@
       -webkit-appearance: none;
       margin: 0;
       padding: 7px 18px;
-      background-color: #000000;
+      background-color: #090b10;
       color: #ffffff;
       border: none;
+      border-radius: 0;
       font-family: inherit;
       font-size: clamp(0.88rem, 1.05vw, 1rem);
       font-weight: 500;
@@ -71,21 +178,21 @@
     }
 
     .switch-option + .switch-option {
-      border-left: 1px solid rgba(255, 255, 255, 0.5);
+      border-left: 1px solid rgba(255, 255, 255, 0.16);
     }
 
     .switch-option:hover:not(.active) {
-      background-color: rgba(255, 255, 255, 0.14);
+      background-color: rgba(255, 255, 255, 0.1);
     }
 
     .switch-option.active {
       background-color: #ffffff;
-      color: #000000;
+      color: #030406;
       font-weight: 600;
     }
 
     .switch-option:focus-visible {
-      outline: 2px solid #38bdf8;
+      outline: 1px solid #38bdf8;
       outline-offset: -2px;
     }
 
@@ -97,7 +204,7 @@
       align-items: center;
       gap: 10px;
       padding-bottom: 14px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.16);
     }
 
     .place-title {
@@ -138,49 +245,76 @@
     .field-group input[type="number"] {
       width: clamp(76px, 8vw, 120px);
       padding: 6px 10px;
-      background-color: #000000;
+      background-color: #030406;
       color: #ffffff;
-      border: 1px solid #ffffff;
-      border-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      border-radius: 0;
       font-size: clamp(0.88rem, 1.08vw, 1rem);
       text-align: center;
       outline: none;
     }
 
     .field-group input[type="number"]:focus {
-      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+      border-color: rgba(255, 255, 255, 0.65);
     }
 
-    /* --- Wiersz: checkboxy w jednej symetrycznej linii --- */
+    /* --- Checkboxy w niebieskiej (lewa) i pomarańczowej (prawa) ramce --- */
     .options-bar {
       width: 100%;
       display: flex;
-      align-items: center;
+      align-items: stretch;
       justify-content: space-between;
-      gap: clamp(14px, 2.2vw, 36px);
+      gap: clamp(14px, 2vw, 28px);
       flex-wrap: wrap;
     }
 
     .options-left {
       display: flex;
       align-items: center;
-      justify-content: space-evenly;
-      flex: 2;
-      gap: clamp(12px, 2vw, 28px);
+      justify-content: center;
+      flex: 2 1 360px;
+      gap: clamp(12px, 1.6vw, 22px);
       flex-wrap: wrap;
+      padding: 12px 18px;
+      border: 1px solid rgba(56, 189, 248, 0.45);
+      border-radius: 0;
+      background-color: rgba(9, 11, 16, 0.94);
+    }
+
+    .options-left.hud-brackets::before,
+    .options-left.hud-brackets::after {
+      border-color: #38bdf8;
+    }
+
+    .sky-group-title {
+      font-size: clamp(0.82rem, 1.02vw, 1rem);
+      font-weight: 500;
+      color: #bae6fd;
+      white-space: nowrap;
     }
 
     .options-right {
       display: flex;
       align-items: center;
       justify-content: center;
-      flex: 3;
-      gap: clamp(10px, 1.4vw, 20px);
+      flex: 3 1 520px;
+      gap: clamp(12px, 1.6vw, 22px);
       flex-wrap: wrap;
+      padding: 12px 18px;
+      border: 1px solid rgba(251, 146, 60, 0.45);
+      border-radius: 0;
+      background-color: rgba(9, 11, 16, 0.94);
+    }
+
+    .options-right.hud-brackets::before,
+    .options-right.hud-brackets::after {
+      border-color: #fb923c;
     }
 
     .panel-group-title {
       font-size: clamp(0.82rem, 1.02vw, 1rem);
+      font-weight: 500;
+      color: #fed7aa;
       white-space: nowrap;
     }
 
@@ -188,9 +322,6 @@
       display: flex;
       align-items: center;
       gap: clamp(10px, 1.5vw, 22px);
-      padding-left: clamp(10px, 1.2vw, 16px);
-      border-left: 2px solid rgba(255, 255, 255, 0.65);
-      border-radius: 2px;
       flex-wrap: wrap;
     }
 
@@ -207,16 +338,35 @@
     .checkbox-label input[type="checkbox"] {
       appearance: none;
       -webkit-appearance: none;
-      width: 16px;
-      height: 16px;
+      width: 15px;
+      height: 15px;
       margin: 0;
-      background-color: #000000;
-      border: 1.5px solid #ffffff;
-      border-radius: 3px;
+      background-color: #030406;
+      border: 1px solid rgba(255, 255, 255, 0.45);
+      border-radius: 0;
       cursor: pointer;
       display: inline-grid;
       place-content: center;
       flex-shrink: 0;
+      transition: background-color 0.15s ease, border-color 0.15s ease;
+    }
+
+    .options-left .checkbox-label input[type="checkbox"] {
+      border-color: rgba(125, 211, 252, 0.65);
+    }
+
+    .options-left .checkbox-label input[type="checkbox"]:checked {
+      background-color: #38bdf8;
+      border-color: #38bdf8;
+    }
+
+    .options-right .checkbox-label input[type="checkbox"] {
+      border-color: rgba(253, 186, 116, 0.65);
+    }
+
+    .options-right .checkbox-label input[type="checkbox"]:checked {
+      background-color: #fb923c;
+      border-color: #fb923c;
     }
 
     .checkbox-label input[type="checkbox"]:checked {
@@ -225,31 +375,92 @@
 
     .checkbox-label input[type="checkbox"]:checked::before {
       content: "";
-      width: 9px;
-      height: 5px;
-      border-left: 2px solid #000000;
-      border-bottom: 2px solid #000000;
+      width: 8px;
+      height: 4px;
+      border-left: 1.5px solid #030406;
+      border-bottom: 1.5px solid #030406;
       transform: rotate(-45deg) translate(1px, -1px);
     }
 
     .checkbox-label input[type="checkbox"]:focus-visible {
-      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4);
-      outline: none;
+      outline: 1px solid rgba(255, 255, 255, 0.5);
+      outline-offset: 1px;
     }
 
-    /* --- Wiersz wyboru strefy czasowej --- */
+    /* --- Połączona tabela: wybór strefy czasowej oraz daty początkowej i końcowej --- */
+    .time-and-dates-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      background-color: rgba(9, 11, 16, 0.94);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+    }
+
+    .time-and-dates-table thead th {
+      padding: 7px 16px;
+      background-color: rgba(3, 4, 6, 0.75);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: #94a3b8;
+      text-align: center;
+    }
+
+    .time-and-dates-table thead th + th,
+    .time-and-dates-table tbody td + td {
+      border-left: 1px solid rgba(255, 255, 255, 0.16);
+    }
+
+    .time-and-dates-table tbody td {
+      padding: 14px 16px;
+      vertical-align: middle;
+    }
+
+    .timezone-cell-inner,
+    .dates-cell-inner {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    @media (max-width: 1140px) {
+      .time-and-dates-table,
+      .time-and-dates-table thead,
+      .time-and-dates-table tbody,
+      .time-and-dates-table tr,
+      .time-and-dates-table th,
+      .time-and-dates-table td {
+        display: block;
+        width: 100%;
+      }
+
+      .time-and-dates-table thead {
+        display: none;
+      }
+
+      .time-and-dates-table tbody td + td {
+        border-left: none;
+        border-top: 1px solid rgba(255, 255, 255, 0.16);
+      }
+    }
+
     .timezone-bar {
       width: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-wrap: wrap;
-      gap: clamp(10px, 1.8vw, 24px);
+      gap: clamp(8px, 1.2vw, 16px);
     }
 
     .timezone-label,
     .timezone-or {
-      font-size: clamp(0.9rem, 1.15vw, 1.08rem);
+      font-size: clamp(0.88rem, 1.05vw, 1.02rem);
       white-space: nowrap;
     }
 
@@ -260,18 +471,18 @@
     }
 
     .utc-group label {
-      font-size: clamp(0.9rem, 1.15vw, 1.08rem);
+      font-size: clamp(0.88rem, 1.05vw, 1.02rem);
       white-space: nowrap;
     }
 
     .utc-group input[type="text"] {
-      width: clamp(74px, 7vw, 105px);
-      padding: 6px 10px;
-      background-color: #000000;
+      width: clamp(66px, 6vw, 90px);
+      padding: 6px 8px;
+      background-color: #030406;
       color: #ffffff;
-      border: 1px solid #ffffff;
-      border-radius: 4px;
-      font-size: clamp(0.9rem, 1.1vw, 1.02rem);
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      border-radius: 0;
+      font-size: clamp(0.88rem, 1.02vw, 0.98rem);
       text-align: center;
       outline: none;
     }
@@ -281,7 +492,7 @@
     }
 
     .utc-group input[type="text"]:focus {
-      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+      border-color: rgba(255, 255, 255, 0.65);
     }
 
     .tz-selects {
@@ -289,39 +500,32 @@
       align-items: center;
       justify-content: center;
       flex-wrap: wrap;
-      gap: clamp(10px, 1.5vw, 20px);
+      gap: clamp(8px, 1.1vw, 14px);
     }
 
     .tz-select {
-      min-width: clamp(170px, 16vw, 240px);
-      max-width: min(320px, 85vw);
-      padding: 6px 12px;
-      background-color: #000000;
+      min-width: clamp(135px, 12vw, 195px);
+      max-width: min(240px, 85vw);
+      padding: 6px 10px;
+      background-color: #030406;
       color: #ffffff;
-      border: 1px solid #ffffff;
-      border-radius: 4px;
-      font-size: clamp(0.9rem, 1.1vw, 1.02rem);
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      border-radius: 0;
+      font-size: clamp(0.88rem, 1.02vw, 0.98rem);
       cursor: pointer;
       outline: none;
     }
 
     .tz-select:focus {
-      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+      border-color: rgba(255, 255, 255, 0.65);
     }
 
     .tz-select option {
-      background-color: #000000;
+      background-color: #090b10;
       color: #ffffff;
     }
 
-    /* --- Wiersz wyboru daty początkowej i końcowej --- */
-    .dates-section {
-      width: 100%;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
+    /* --- Wybór daty początkowej i końcowej --- */
     .dates-bar {
       width: 100%;
       display: grid;
@@ -329,34 +533,42 @@
       gap: clamp(16px, 4vw, 64px);
     }
 
+    .dates-cell-inner .dates-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: clamp(10px, 1.4vw, 22px);
+    }
+
     .date-group {
       display: flex;
       align-items: center;
       justify-content: center;
       flex-wrap: wrap;
-      gap: 10px;
+      gap: 8px;
     }
 
     .date-group label {
-      font-size: clamp(0.9rem, 1.15vw, 1.08rem);
+      font-size: clamp(0.88rem, 1.05vw, 1.02rem);
       white-space: nowrap;
     }
 
     .date-group input[type="datetime-local"] {
-      padding: 6px 12px;
-      background-color: #000000;
+      padding: 6px 10px;
+      background-color: #030406;
       color: #ffffff;
-      border: 1px solid #ffffff;
-      border-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      border-radius: 0;
       font-family: inherit;
-      font-size: clamp(0.9rem, 1.1vw, 1.02rem);
+      font-size: clamp(0.86rem, 1vw, 0.98rem);
       text-align: center;
       cursor: pointer;
       outline: none;
     }
 
     .date-group input[type="datetime-local"]:focus {
-      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+      border-color: rgba(255, 255, 255, 0.65);
     }
 
     .date-group input[type="datetime-local"]::-webkit-calendar-picker-indicator {
@@ -367,7 +579,7 @@
     /* --- Podświetlenie błędnych pól --- */
     .input-error {
       border-color: #f87171 !important;
-      box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.35) !important;
+      box-shadow: none !important;
     }
 
     /* --- Przycisk generowania i komunikaty --- */
@@ -382,9 +594,9 @@
     .generate-btn {
       padding: 9px 26px;
       background-color: #ffffff;
-      color: #000000;
-      border: 1.5px solid #ffffff;
-      border-radius: 4px;
+      color: #030406;
+      border: 1px solid #ffffff;
+      border-radius: 0;
       font-family: inherit;
       font-size: clamp(0.92rem, 1.1vw, 1.05rem);
       font-weight: 600;
@@ -393,12 +605,12 @@
     }
 
     .generate-btn:hover:not(:disabled) {
-      background-color: #000000;
+      background-color: #090b10;
       color: #ffffff;
     }
 
     .generate-btn:disabled {
-      opacity: 0.55;
+      opacity: 0.72;
       cursor: wait;
     }
 
@@ -412,6 +624,22 @@
 
     .status-msg.info {
       color: #93c5fd;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+    }
+
+    .status-msg.info::before {
+      content: "";
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(147, 197, 253, 0.25);
+      border-top-color: #38bdf8;
+      border-right-color: #fb923c;
+      animation: astroSpin 0.9s linear infinite;
+      flex-shrink: 0;
     }
 
     .hidden {
@@ -440,9 +668,9 @@
     }
 
     .chart-card {
-      background-color: #050505;
-      border: 1px solid rgba(255, 255, 255, 0.75);
-      border-radius: 6px;
+      background-color: rgba(9, 11, 16, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 0;
       padding: clamp(14px, 1.8vw, 22px);
       display: flex;
       flex-direction: column;
@@ -490,8 +718,8 @@
 
     .legend-swatch {
       width: 16px;
-      height: 3px;
-      border-radius: 2px;
+      height: 2px;
+      border-radius: 0;
       display: inline-block;
       flex-shrink: 0;
     }
@@ -509,17 +737,18 @@
       width: 18px;
       height: 12px;
       background-color: rgba(56, 189, 248, 0.18);
-      border-left: 1.5px dashed rgba(56, 189, 248, 0.85);
-      border-right: 1.5px dashed rgba(56, 189, 248, 0.85);
+      border-left: 1px dashed rgba(56, 189, 248, 0.85);
+      border-right: 1px dashed rgba(56, 189, 248, 0.85);
       border-top: 1px solid rgba(56, 189, 248, 0.35);
       border-bottom: 1px solid rgba(56, 189, 248, 0.35);
-      border-radius: 1px;
+      border-radius: 0;
     }
 
     .canvas-wrapper {
       position: relative;
       width: 100%;
       height: clamp(310px, 37vh, 430px);
+      background-color: #030406;
     }
 
     .canvas-wrapper canvas {
@@ -537,20 +766,140 @@
       justify-content: center;
       text-align: center;
       padding: 20px;
+      background-color: #030406;
       color: rgba(255, 255, 255, 0.48);
       font-size: 0.92rem;
-      border: 1px dashed rgba(255, 255, 255, 0.25);
-      border-radius: 4px;
+      border: 1px dashed rgba(255, 255, 255, 0.16);
+      border-radius: 0;
       pointer-events: none;
+    }
+
+    /* --- Minimalistyczna animacja ładowania: Słońce + Ziemia wokół Słońca + Księżyc wokół Ziemi --- */
+    .chart-loading-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 15;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      padding: 16px;
+      background: rgba(9, 11, 16, 0.94);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: 0;
+      animation: overlayFadeIn 0.22s ease-out;
+    }
+
+    .astro-system {
+      position: relative;
+      width: 96px;
+      height: 96px;
+      display: grid;
+      place-items: center;
+    }
+
+    .astro-earth-orbit {
+      position: absolute;
+      width: 68px;
+      height: 68px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+    }
+
+    .astro-sun {
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background-color: #fbbf24;
+      box-shadow: 0 0 12px rgba(251, 191, 36, 0.55);
+    }
+
+    .astro-earth-arm {
+      position: absolute;
+      width: 68px;
+      height: 68px;
+      animation: astroSpin 5.4s linear infinite;
+    }
+
+    .astro-earth-system {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      width: 22px;
+      height: 22px;
+      transform: translate(-50%, -50%);
+      display: grid;
+      place-items: center;
+    }
+
+    .astro-moon-orbit {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 1px solid rgba(56, 189, 248, 0.24);
+    }
+
+    .astro-earth {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background-color: #38bdf8;
+      box-shadow: 0 0 6px rgba(56, 189, 248, 0.65);
+    }
+
+    .astro-moon-arm {
+      position: absolute;
+      inset: 0;
+      animation: astroSpin 1.35s linear infinite;
+    }
+
+    .astro-moon {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      width: 3.5px;
+      height: 3.5px;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      background-color: #f8fafc;
+    }
+
+    .chart-loading-text {
+      font-size: 0.84rem;
+      font-weight: 400;
+      color: rgba(224, 242, 254, 0.88);
+      text-align: center;
+      letter-spacing: 0.02em;
+    }
+
+    @keyframes astroSpin {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @keyframes overlayFadeIn {
+      from {
+        opacity: 0;
+      }
+      to {
+        opacity: 1;
+      }
     }
 
     .chart-tooltip {
       position: absolute;
       z-index: 20;
       pointer-events: none;
-      background-color: rgba(10, 10, 12, 0.94);
-      border: 1px solid rgba(255, 255, 255, 0.7);
-      border-radius: 4px;
+      background-color: rgba(9, 11, 16, 0.96);
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      border-radius: 0;
       padding: 8px 11px;
       font-size: 0.8rem;
       line-height: 1.45;
@@ -568,8 +917,9 @@
     }
 
     .stat-box {
-      border: 1px solid rgba(255, 255, 255, 0.22);
-      border-radius: 4px;
+      background-color: #030406;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 0;
       padding: 6px 9px;
       text-align: center;
     }
@@ -599,9 +949,9 @@
 
     .interval-energy-card {
       width: 100%;
-      background-color: #050505;
-      border: 1px solid rgba(255, 255, 255, 0.75);
-      border-radius: 6px;
+      background-color: rgba(9, 11, 16, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 0;
       padding: clamp(16px, 2.2vw, 26px);
       display: flex;
       flex-direction: column;
@@ -643,8 +993,9 @@
       text-align: center;
       gap: 6px;
       padding: 10px 14px;
-      border: 1px solid rgba(255, 255, 255, 0.25);
-      border-radius: 4px;
+      background-color: #030406;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 0;
     }
 
     .interval-result-place {
@@ -660,98 +1011,208 @@
   </style>
 </head>
 <body>
+  <!-- Rysunki techniczne w tle (Księżyc, Ziemia, trajektoria NRHO, rzut biegunowy) -->
+  <div class="space-backdrop" aria-hidden="true">
+    <svg viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+      <defs>
+        <radialGradient id="lunarLimbGlow" cx="18%" cy="28%" r="48%">
+          <stop offset="0%" stop-color="#ffffff" stop-opacity="0.16" />
+          <stop offset="52%" stop-color="#94a3b8" stop-opacity="0.06" />
+          <stop offset="85%" stop-color="#090b10" stop-opacity="0.85" />
+          <stop offset="100%" stop-color="#030406" stop-opacity="1" />
+        </radialGradient>
+
+        <linearGradient id="terminatorRim" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#ffffff" stop-opacity="0.38" />
+          <stop offset="45%" stop-color="#38bdf8" stop-opacity="0.18" />
+          <stop offset="100%" stop-color="#030406" stop-opacity="0" />
+        </linearGradient>
+
+        <radialGradient id="earthInSpace" cx="35%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#e2e8f0" stop-opacity="0.72" />
+          <stop offset="45%" stop-color="#38bdf8" stop-opacity="0.28" />
+          <stop offset="85%" stop-color="#090b10" stop-opacity="0.92" />
+          <stop offset="100%" stop-color="#030406" stop-opacity="1" />
+        </radialGradient>
+      </defs>
+
+      <!-- Pole gwiazd generowane z JS -->
+      <g id="bg-starfield"></g>
+
+      <!-- Zakrzywiona sylwetka Księżyca z kraterami w lewym górnym rogu -->
+      <g opacity="0.65">
+        <circle cx="110" cy="210" r="392" fill="none" stroke="url(#terminatorRim)" stroke-width="1.2" />
+        <circle cx="110" cy="210" r="390" fill="#05070b" />
+        <circle cx="110" cy="210" r="390" fill="url(#lunarLimbGlow)" />
+        <g stroke="rgba(255,255,255,0.1)" fill="rgba(3,4,6,0.5)" stroke-width="0.9">
+          <ellipse cx="95" cy="95" rx="28" ry="15" transform="rotate(-24 95 95)" />
+          <ellipse cx="185" cy="150" rx="18" ry="10" transform="rotate(-18 185 150)" />
+          <ellipse cx="65" cy="180" rx="36" ry="20" transform="rotate(-30 65 180)" />
+          <ellipse cx="245" cy="225" rx="14" ry="8" transform="rotate(-10 245 225)" />
+          <ellipse cx="140" cy="255" rx="24" ry="13" transform="rotate(-20 140 255)" />
+        </g>
+        <path d="M 135 -180 A 390 390 0 0 1 500 210 L 500 600 L 145 600 C 185 380 180 120 135 -180 Z" fill="#030406" opacity="0.86" />
+      </g>
+
+      <!-- Siatka orbitalna, elipsa NRHO i linia widoczności Ziemia - Księżyc -->
+      <g stroke="rgba(255,255,255,0.055)" stroke-width="1" fill="none">
+        <circle cx="110" cy="210" r="455" stroke-dasharray="3 6" />
+        <ellipse cx="340" cy="240" rx="390" ry="130" transform="rotate(-16 340 240)" stroke="rgba(56,189,248,0.15)" stroke-dasharray="6 4" />
+        <line x1="285" y1="335" x2="960" y2="145" stroke="rgba(56,189,248,0.16)" stroke-dasharray="3 6" />
+        <line x1="0" y1="520" x2="1600" y2="520" stroke-dasharray="2 10" />
+        <line x1="960" y1="0" x2="960" y2="1000" stroke-dasharray="2 10" />
+      </g>
+
+      <!-- Sylwetka Ziemi -->
+      <g transform="translate(960, 145)" opacity="0.65">
+        <circle cx="0" cy="0" r="18" fill="url(#earthInSpace)" stroke="rgba(255,255,255,0.2)" stroke-width="0.7" />
+        <path d="M -4 -17 A 18 18 0 0 1 9 16 A 14 18 0 0 0 -4 -17 Z" fill="#030406" opacity="0.88" />
+        <circle cx="0" cy="0" r="25" fill="none" stroke="rgba(56,189,248,0.18)" stroke-dasharray="2 4" />
+        <text x="30" y="3" fill="rgba(148,163,184,0.32)" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="2">TERRA // LOS REF</text>
+      </g>
+
+      <!-- Rzut stereograficzny bieguna po prawej stronie -->
+      <g transform="translate(1430, 260)" stroke="rgba(255,255,255,0.05)" fill="none" stroke-width="1">
+        <circle cx="0" cy="0" r="240" />
+        <circle cx="0" cy="0" r="180" stroke-dasharray="4 6" />
+        <circle cx="0" cy="0" r="120" />
+        <circle cx="0" cy="0" r="60" stroke="rgba(56,189,248,0.11)" />
+        <line x1="-260" y1="0" x2="260" y2="0" />
+        <line x1="0" y1="-260" x2="0" y2="260" />
+        <line x1="-185" y1="-185" x2="185" y2="185" stroke-dasharray="2 8" />
+        <line x1="185" y1="-185" x2="-185" y2="185" stroke-dasharray="2 8" />
+        <text x="10" y="-186" fill="rgba(148,163,184,0.22)" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="2">85°S LAT RING</text>
+      </g>
+
+      <!-- Izolinie topograficzne w lewym dolnym rogu -->
+      <g transform="translate(150, 820)" stroke="rgba(255,255,255,0.045)" fill="none" stroke-width="1">
+        <path d="M -200 -35 C -145 -170, 110 -190, 190 -55 C 245 45, 165 190, 18 200 C -125 208, -235 80, -200 -35 Z" />
+        <path d="M -145 -22 C -100 -125, 80 -138, 140 -40 C 180 30, 120 138, 12 146 C -92 155, -172 58, -145 -22 Z" stroke-dasharray="5 5" />
+        <path d="M -90 -12 C -65 -75, 48 -84, 88 -22 C 114 22, 74 84, 8 88 C -56 92, -108 35, -90 -12 Z" stroke="rgba(56,189,248,0.1)" />
+        <text x="12" y="164" fill="rgba(148,163,184,0.2)" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="2">LOLA DEM // CONTOUR</text>
+      </g>
+    </svg>
+  </div>
+
   <header class="top-panel">
-    <!-- 1. Wiersz z checkboxami w jednej linii (wybór pojedynczy) -->
-    <div class="options-bar">
-      <div class="options-left">
-        <label class="checkbox-label">
-          <input type="checkbox" id="chk-earth-alt" name="metric" value="earth_alt" />
-          <span>wysokość Ziemi nad horyzontem</span>
-        </label>
+    <!-- 1. Główny tytuł na górze -->
+    <h1 class="main-title">Oblicz położenie ciał niebieskich oraz ilość światła</h1>
 
-        <label class="checkbox-label">
-          <input type="checkbox" id="chk-sun-alt" name="metric" value="sun_alt" />
-          <span>wysokość Słońca nad horyzontem</span>
-        </label>
-      </div>
+    <!-- 2. Pod tytułem, przed ramkami: wybierz wykres + niebieska i pomarańczowa ramka -->
+    <div class="options-section">
+      <p class="options-prompt">Wybierz wykres:</p>
 
-      <div class="options-right">
-        <span class="panel-group-title">natężenie padające na panel:</span>
+      <div class="options-bar">
+        <div class="options-left hud-brackets">
+          <span class="sky-group-title">Położenia ciał niebieskich:</span>
 
-        <div class="panel-suboptions">
           <label class="checkbox-label">
-            <input type="checkbox" id="chk-panel-parallel" name="metric" value="panel_parallel" />
-            <span>równoległy do powierzchni</span>
+            <input type="checkbox" id="chk-earth-alt" name="metric" value="earth_alt" />
+            <span>wysokość Ziemi nad horyzontem</span>
           </label>
 
           <label class="checkbox-label">
-            <input type="checkbox" id="chk-panel-perpendicular" name="metric" value="panel_perpendicular" />
-            <span>prostopadły do powierzchni</span>
+            <input type="checkbox" id="chk-sun-alt" name="metric" value="sun_alt" />
+            <span>wysokość Słońca nad horyzontem</span>
           </label>
+        </div>
 
-          <label class="checkbox-label">
-            <input type="checkbox" id="chk-panel-tracking" name="metric" value="panel_tracking" />
-            <span>podążający za Słońcem</span>
-          </label>
+        <div class="options-right hud-brackets">
+          <span class="panel-group-title">Natężenia padającego na panel:</span>
+
+          <div class="panel-suboptions">
+            <label class="checkbox-label">
+              <input type="checkbox" id="chk-panel-parallel" name="metric" value="panel_parallel" />
+              <span>równoległy do powierzchni</span>
+            </label>
+
+            <label class="checkbox-label">
+              <input type="checkbox" id="chk-panel-perpendicular" name="metric" value="panel_perpendicular" />
+              <span>prostopadły do powierzchni</span>
+            </label>
+
+            <label class="checkbox-label">
+              <input type="checkbox" id="chk-panel-tracking" name="metric" value="panel_tracking" />
+              <span>podążający za Słońcem</span>
+            </label>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- 2. Wiersz wyboru strefy czasowej -->
-    <div class="timezone-bar">
-      <span class="timezone-label">Wybierz strefę czasową:</span>
+    <!-- 3. Połączona tabela: wybór strefy czasowej i wybór zakresu dat -->
+    <table class="time-and-dates-table hud-brackets" aria-label="Strefa czasowa i zakres dat">
+      <thead>
+        <tr>
+          <th scope="col">Strefa czasowa</th>
+          <th scope="col">Zakres dat symulacji</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="timezone-box">
+            <div class="timezone-cell-inner">
+              <div class="timezone-bar">
+                <span class="timezone-label">Wybierz strefę czasową:</span>
 
-      <div class="utc-group">
-        <label for="utc-offset">UTC</label>
-        <input
-          type="text"
-          id="utc-offset"
-          name="utc_offset"
-          placeholder="+1"
-          aria-label="Przesunięcie względem UTC, np. +9, -5, +11:30"
-        />
-      </div>
+                <div class="utc-group">
+                  <label for="utc-offset">UTC</label>
+                  <input
+                    type="text"
+                    id="utc-offset"
+                    name="utc_offset"
+                    placeholder="+1"
+                    aria-label="Przesunięcie względem UTC, np. +9, -5, +11:30"
+                  />
+                </div>
 
-      <span class="timezone-or">lub</span>
+                <span class="timezone-or">lub</span>
 
-      <div class="tz-selects">
-        <select id="country-select" name="country" class="tz-select" aria-label="Wybierz kraj">
-          <option value="">kraj</option>
-        </select>
+                <div class="tz-selects">
+                  <select id="country-select" name="country" class="tz-select" aria-label="Wybierz kraj">
+                    <option value="">kraj</option>
+                  </select>
 
-        <select id="state-select" name="state" class="tz-select hidden" aria-label="Wybierz stan lub region">
-          <option value="">stan</option>
-        </select>
-      </div>
+                  <select id="state-select" name="state" class="tz-select hidden" aria-label="Wybierz region">
+                    <option value="">region</option>
+                  </select>
+                </div>
+              </div>
 
-      <div id="tz-status" class="status-msg hidden"></div>
-    </div>
+              <div id="tz-status" class="status-msg hidden"></div>
+            </div>
+          </td>
 
-    <!-- 3. Wiersz wyboru daty początkowej i końcowej -->
-    <div class="dates-section">
-      <div class="dates-bar">
-        <div class="date-group">
-          <label for="date-start">Data początkowa:</label>
-          <input
-            type="datetime-local"
-            id="date-start"
-            name="date_start"
-            step="60"
-          />
-        </div>
+          <td class="dates-section">
+            <div class="dates-cell-inner">
+              <div class="dates-bar">
+                <div class="date-group">
+                  <label for="date-start">Data początkowa:</label>
+                  <input
+                    type="datetime-local"
+                    id="date-start"
+                    name="date_start"
+                    step="60"
+                  />
+                </div>
 
-        <div class="date-group">
-          <label for="date-end">Data końcowa:</label>
-          <input
-            type="datetime-local"
-            id="date-end"
-            name="date_end"
-            step="60"
-          />
-        </div>
-      </div>
-      <div id="date-status" class="status-msg hidden"></div>
-    </div>
+                <div class="date-group">
+                  <label for="date-end">Data końcowa:</label>
+                  <input
+                    type="datetime-local"
+                    id="date-end"
+                    name="date_end"
+                    step="60"
+                  />
+                </div>
+              </div>
+
+              <div id="date-status" class="status-msg hidden"></div>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
 
     <!-- 4. Przycisk generowania i status obliczeń -->
     <div class="actions-bar">
@@ -775,7 +1236,7 @@
 
   <!-- 5. Sekcja z wykresami oraz współrzędnymi wewnątrz odpowiadających im boxów -->
   <main class="charts-section" id="charts-section" aria-label="Wykresy dla wybranych lokalizacji">
-    <article class="chart-card" id="chart-card-1">
+    <article class="chart-card hud-brackets" id="chart-card-1">
       <section class="place-section">
         <h2 class="place-title" id="place-title-1">Współrzędne pierwszego miejsca</h2>
         <div class="coords-row">
@@ -801,12 +1262,28 @@
         <div class="chart-placeholder" id="chart-placeholder-1">
           Brak danych wykresu dla pierwszego miejsca
         </div>
+        <div class="chart-loading-overlay hidden" id="chart-loading-1" aria-hidden="true">
+          <div class="astro-system">
+            <span class="astro-earth-orbit"></span>
+            <span class="astro-sun"></span>
+            <div class="astro-earth-arm">
+              <div class="astro-earth-system">
+                <span class="astro-moon-orbit"></span>
+                <span class="astro-earth"></span>
+                <div class="astro-moon-arm">
+                  <span class="astro-moon"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <span class="chart-loading-text">Obliczanie pozycji i nasłonecznienia...</span>
+        </div>
         <div class="chart-tooltip hidden" id="chart-tooltip-1"></div>
       </div>
       <div class="chart-stats hidden" id="chart-stats-1"></div>
     </article>
 
-    <article class="chart-card" id="chart-card-2">
+    <article class="chart-card hud-brackets" id="chart-card-2">
       <section class="place-section">
         <h2 class="place-title" id="place-title-2">Współrzędne drugiego miejsca</h2>
         <div class="coords-row">
@@ -832,6 +1309,22 @@
         <div class="chart-placeholder" id="chart-placeholder-2">
           Brak danych wykresu dla drugiego miejsca
         </div>
+        <div class="chart-loading-overlay hidden" id="chart-loading-2" aria-hidden="true">
+          <div class="astro-system">
+            <span class="astro-earth-orbit"></span>
+            <span class="astro-sun"></span>
+            <div class="astro-earth-arm">
+              <div class="astro-earth-system">
+                <span class="astro-moon-orbit"></span>
+                <span class="astro-earth"></span>
+                <div class="astro-moon-arm">
+                  <span class="astro-moon"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <span class="chart-loading-text">Obliczanie pozycji i nasłonecznienia...</span>
+        </div>
         <div class="chart-tooltip hidden" id="chart-tooltip-2"></div>
       </div>
       <div class="chart-stats hidden" id="chart-stats-2"></div>
@@ -840,7 +1333,7 @@
 
   <!-- 6. Sekcja wyboru interwału i obliczenia zebranej energii (tylko dla wykresów paneli) -->
   <section class="interval-energy-section hidden" id="panel-interval-section" aria-label="Energia zebrana w wybranym interwale">
-    <div class="interval-energy-card">
+    <div class="interval-energy-card hud-brackets">
       <h3 class="interval-energy-title" id="interval-energy-title">
         Oblicz energię zebraną przez panele w wybranym interwale (dla obu wykresów)
       </h3>
@@ -888,6 +1381,26 @@
   </section>
 
   <script>
+    // --- Generowanie pola gwiazd w tle ---
+    (function generujPoleGwiazd() {
+      const group = document.getElementById("bg-starfield");
+      if (!group) return;
+      let seed = 4219;
+      const rand = () => {
+        seed = (seed * 16807) % 2147483647;
+        return (seed - 1) / 2147483646;
+      };
+      let svgContent = "";
+      for (let i = 0; i < 115; i++) {
+        const x = Math.floor(rand() * 1600);
+        const y = Math.floor(rand() * 1000);
+        const r = rand() > 0.86 ? 1.3 : 0.7;
+        const opacity = (0.14 + rand() * 0.45).toFixed(2);
+        svgContent += `<circle cx="${x}" cy="${y}" r="${r}" fill="#ffffff" opacity="${opacity}" />`;
+      }
+      group.innerHTML = svgContent;
+    })();
+
     const METRYKI_PANELI = new Set(["panel_parallel", "panel_perpendicular", "panel_tracking"]);
 
     // --- Stan liczby wykresów (1 lub 2) ---
@@ -903,6 +1416,22 @@
     const intervalResultPlace1 = document.getElementById("interval-result-place-1");
     const intervalEnergyTitle = document.getElementById("interval-energy-title");
     const generateBtn = document.getElementById("generate-btn");
+    const chartLoading1 = document.getElementById("chart-loading-1");
+    const chartLoading2 = document.getElementById("chart-loading-2");
+
+    function ustawAnimacjeLadowaniaWykresow(aktywne) {
+      if (aktywne) {
+        chartLoading1.classList.remove("hidden");
+        if (liczbaWykresow === 2) {
+          chartLoading2.classList.remove("hidden");
+        } else {
+          chartLoading2.classList.add("hidden");
+        }
+      } else {
+        chartLoading1.classList.add("hidden");
+        chartLoading2.classList.add("hidden");
+      }
+    }
 
     function ustawLiczbeWykresow(nowaLiczba) {
       if (nowaLiczba !== 1 && nowaLiczba !== 2) return;
@@ -1146,7 +1675,7 @@
         if (krajeIStrefyIana[kraj] === "MULTIPLE" && !stan) {
           if (wymagajWyboru) {
             stateSelect.classList.add("input-error");
-            tzStatus.textContent = `Błędna strefa czasowa: wybierz stan lub region dla kraju "${kraj}".`;
+            tzStatus.textContent = `Błędna strefa czasowa: wybierz region dla kraju "${kraj}".`;
             tzStatus.classList.remove("hidden");
           } else {
             tzStatus.classList.add("hidden");
@@ -1247,7 +1776,7 @@
 
     function zaktualizujListeStanow() {
       const wybranyKraj = countrySelect.value;
-      stateSelect.innerHTML = '<option value="">stan</option>';
+      stateSelect.innerHTML = '<option value="">region</option>';
 
       if (wybranyKraj && krajeIStrefyIana[wybranyKraj] === "MULTIPLE") {
         const regiony = regionyIStrefyIana[wybranyKraj] || {};
@@ -1266,7 +1795,7 @@
     function wyczyscKrajIStan() {
       countrySelect.value = "";
       stateSelect.value = "";
-      stateSelect.innerHTML = '<option value="">stan</option>';
+      stateSelect.innerHTML = '<option value="">region</option>';
       stateSelect.classList.add("hidden");
       countrySelect.classList.remove("input-error");
       stateSelect.classList.remove("input-error");
@@ -1829,19 +2358,19 @@
       const opisyPaneli = {
         panel_parallel: {
           tytul: "Natężenie promieniowania — panel równoległy do powierzchni",
-          seria1Nazwa: "Natężenie poziome: I_S·sin(z)·α [W/m²]",
+          seria1Nazwa: "Natężenie",
           kolor1: "#f59e0b",
           wypelnienieKolor: "rgba(253, 224, 71, 0.22)",
         },
         panel_perpendicular: {
           tytul: "Natężenie promieniowania — panel prostopadły do powierzchni",
-          seria1Nazwa: "Natężenie pionowe: I_S·cos(z)·α [W/m²]",
+          seria1Nazwa: "Natężenie",
           kolor1: "#ef4444",
           wypelnienieKolor: "rgba(252, 165, 165, 0.22)",
         },
         panel_tracking: {
           tytul: "Natężenie promieniowania — panel podążający za Słońcem",
-          seria1Nazwa: "Natężenie śledzące: I_S·α [W/m²]",
+          seria1Nazwa: "Natężenie",
           kolor1: "#a855f7",
           wypelnienieKolor: "rgba(196, 181, 253, 0.24)",
         },
@@ -1999,7 +2528,7 @@
 
       // Siatka pozioma i etykiety osi Y
       const liczbaPodzialekY = 5;
-      ctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif';
+      ctx.font = '11px "JetBrains Mono", "Space Mono", monospace';
       ctx.textBaseline = "middle";
 
       for (let i = 0; i <= liczbaPodzialekY; i++) {
@@ -2061,7 +2590,7 @@
       }
 
       // Ramka obszaru wykresu
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.28)";
       ctx.lineWidth = 1;
       ctx.strokeRect(padLeft, padTop, plotW, plotH);
 
@@ -2069,7 +2598,7 @@
       if (cfg.osXEtykieta) {
         ctx.save();
         ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
-        ctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif';
+        ctx.font = '11px "JetBrains Mono", "Space Mono", monospace';
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
         ctx.fillText(cfg.osXEtykieta, padLeft + plotW / 2, padTop + plotH + 37);
@@ -2079,7 +2608,7 @@
       // Opisy osi Y
       ctx.save();
       ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
-      ctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif';
+      ctx.font = '11px "JetBrains Mono", "Space Mono", monospace';
       ctx.textAlign = "center";
       ctx.translate(15, padTop + plotH / 2);
       ctx.rotate(-Math.PI / 2);
@@ -2089,7 +2618,7 @@
       if (hasRightAxis && cfg.osYPrawaEtykieta) {
         ctx.save();
         ctx.fillStyle = cfg.seria2.kolor;
-        ctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif';
+        ctx.font = '11px "JetBrains Mono", "Space Mono", monospace';
         ctx.textAlign = "center";
         ctx.translate(width - 13, padTop + plotH / 2);
         ctx.rotate(Math.PI / 2);
@@ -2131,7 +2660,7 @@
           ctx.fillRect(xSel1, padTop, Math.max(1, xSel2 - xSel1), plotH);
 
           ctx.strokeStyle = "rgba(56, 189, 248, 0.7)";
-          ctx.lineWidth = 1.2;
+          ctx.lineWidth = 1;
           ctx.setLineDash([4, 4]);
           ctx.beginPath();
           ctx.moveTo(xSel1, padTop);
@@ -2170,7 +2699,7 @@
       if (cfg.liniaZero && skalaLewa.min <= 0 && skalaLewa.max >= 0) {
         const y0 = yLewaDoPx(0);
         ctx.strokeStyle = "#38bdf8";
-        ctx.lineWidth = 1.2;
+        ctx.lineWidth = 1;
         ctx.setLineDash([6, 4]);
         ctx.beginPath();
         ctx.moveTo(padLeft, y0);
@@ -2182,7 +2711,7 @@
       // Rysowanie serii 2 (góry)
       if (cfg.seria2) {
         ctx.strokeStyle = cfg.seria2.kolor;
-        ctx.lineWidth = 1.7;
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
         for (let i = 0; i < n; i++) {
           const x = xDoPx(i);
@@ -2195,7 +2724,7 @@
 
       // Rysowanie serii 1 (Słońce / Ziemia / Natężenie)
       ctx.strokeStyle = cfg.seria1.kolor;
-      ctx.lineWidth = 2.0;
+      ctx.lineWidth = 1.8;
       ctx.beginPath();
       for (let i = 0; i < n; i++) {
         const x = xDoPx(i);
@@ -2221,7 +2750,7 @@
 
         ctx.fillStyle = cfg.seria1.kolor;
         ctx.beginPath();
-        ctx.arc(hx, hy1, 4, 0, Math.PI * 2);
+        ctx.arc(hx, hy1, 3.5, 0, Math.PI * 2);
         ctx.fill();
 
         if (cfg.seria2) {
@@ -2230,7 +2759,7 @@
             : yLewaDoPx(cfg.seria2.dane[hoverIndex]);
           ctx.fillStyle = cfg.seria2.kolor;
           ctx.beginPath();
-          ctx.arc(hx, hy2, 4, 0, Math.PI * 2);
+          ctx.arc(hx, hy2, 3.5, 0, Math.PI * 2);
           ctx.fill();
         }
       }
@@ -2343,9 +2872,11 @@
       if (kontrolerZapytania) {
         kontrolerZapytania.abort();
       }
-      kontrolerZapytania = new AbortController();
+      const mojKontroler = new AbortController();
+      kontrolerZapytania = mojKontroler;
 
       generateBtn.disabled = true;
+      ustawAnimacjeLadowaniaWykresow(true);
       plotStatus.textContent =
         liczbaWykresow === 1
           ? "Obliczanie pozycji ciał niebieskich, topografii Księżyca i generowanie wykresu..."
@@ -2358,7 +2889,7 @@
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(params),
-          signal: kontrolerZapytania.signal,
+          signal: mojKontroler.signal,
         });
 
         if (!resp.ok) {
@@ -2424,7 +2955,10 @@
         }
         plotStatus.classList.remove("hidden", "info");
       } finally {
-        generateBtn.disabled = false;
+        if (kontrolerZapytania === mojKontroler) {
+          generateBtn.disabled = false;
+          ustawAnimacjeLadowaniaWykresow(false);
+        }
       }
     }
 
