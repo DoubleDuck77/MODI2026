@@ -97,8 +97,53 @@ docker compose logs -f api         # logi, m.in. FeatureRegistryError przy złym
 
 Kod i JSON-y są podmontowane jako wolumeny, a backend przeładowuje się po zmianie `*.py` i `*.json`.
 Przebudowa obrazu jest potrzebna tylko po zmianie `backend/requirements.txt`.
-Bez Dockera: `cd backend && pip install -r requirements.txt && uvicorn app.main:app --reload`
-(ścieżki domyślnie względem roota repo).
+Bez Dockera: `run_local.py`, patrz niżej.
+
+### Bez Dockera (Windows i inne systemy)
+
+Strona `/sim.html` (Powierzchnia + Orbita) uruchamia się jednym poleceniem i liczy dokładnie to samo co kontener.
+
+**Wymagania:**
+- Python **3.12**: `winget install -e --id Python.Python.3.12` albo instalator 3.12 z python.org. Inna wersja nie zadziała: numba 0.61 i numpy 2.2 nie mają pakietów dla 3.14.
+- Git: `winget install -e --id Git.Git`, plus dostęp do repo `github.com/DoubleDuck77/MODI2026`.
+- ~1 GB na dysku (klon ~460 MB z teksturami i efemerydami, do tego `.venv`).
+- RAM ≥ 8 GB. Teren przy biegunie zajmuje chwilowo do ~4.3 GB.
+- Internet przy pierwszym starcie (pip) i w przeglądarce, bo Three.js idzie z CDN jsdelivr.
+
+**Kroki (PowerShell):**
+
+```powershell
+git clone https://github.com/DoubleDuck77/MODI2026.git
+cd MODI2026
+git checkout feat/sim-page        # dopóki /sim.html nie jest w main
+py -3.12 run_local.py             # potem otwórz http://127.0.0.1:8000/sim.html
+```
+
+Pierwsze uruchomienie tworzy `.venv` i instaluje pakiety (kilka minut). Kolejne startują od razu, a pakiety są
+instalowane ponownie tylko po zmianie `backend/requirements.txt`. Ctrl+C zatrzymuje serwer.
+Na Linuksie i macOS: `python3.12 run_local.py`.
+
+**Dlaczego wyniki są takie same jak w Dockerze:**
+- Ten sam Python 3.12 co `python:3.12-slim`. Skrypt odmawia startu na innej wersji.
+- Te same przypięte wersje z `backend/requirements.txt`: numpy 2.2.1, numba 0.61.2 (wymusza llvmlite 0.44.0),
+  pandas 2.2.3. Pozostałe różnice z obrazem dotyczą tylko pakietów serwera HTTP.
+- W `.venv` nie ma pygame, więc `app/core/legacy.py` podstawia tę samą atrapę co w kontenerze.
+- Te same dane z repo (`Textures/` z mapami v3, `coords/`) i ten sam proces: `uvicorn app.main:app` z `backend/`
+  bez `--reload`. Numba używa zwykłego `@njit` (bez `fastmath`/`parallel`), więc wynik nie zależy od liczby rdzeni.
+
+**Sprawdzenie** (w PowerShellu `curl` to alias `Invoke-WebRequest`, dlatego `curl.exe`):
+
+```powershell
+curl.exe -s http://127.0.0.1:8000/health                    # {"status":"ok","features":9}
+curl.exe -s "http://127.0.0.1:8000/api/v1/lunar_surface/sky?t=2026-11-20T12:00:00Z&lat_deg=-43.31&lon_deg=-11.36"
+curl.exe -s "http://127.0.0.1:8000/api/v1/lunar_orbit/initial?t=2026-11-20T12:00:00Z&preset=LRO"
+```
+
+**Problemy:**
+- Port 8000 zajęty: `py -3.12 run_local.py --port 8001`.
+- Komunikat „Folder .venv jest z innego Pythona”: `Remove-Item -Recurse -Force .venv` i uruchom ponownie.
+- `python` otwiera Microsoft Store albo zgłasza złą wersję: zawsze używaj `py -3.12`.
+- Pierwsze zapytanie Orbity trwa kilka sekund (numba kompiluje RK4), następne są szybkie.
 
 Kontrakty można oglądać w `/docs` (schematy OpenAPI generowane z Pydantic), w `contracts/examples/`
 i na żywo w inspektorze na stronie.
