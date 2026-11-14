@@ -781,7 +781,7 @@ if __name__ == "__main__":
         folder=FOLDER_DANYCH,
         folder_cache_topo=FOLDER_CACHE_TOPO,
     )
-
+    '''
     print(f"Liczba wierszy w tablica_elewacji: {len(tablica_elewacji)} (kolumny: {len(tablica_elewacji[0])})")
     for wiersz in tablica_elewacji[:10]:
         print(
@@ -797,4 +797,4 @@ if __name__ == "__main__":
         LON_DEG,
         strefa,
         wysokosci_gor_ziemia=wysokosci_gor_ziemia,
-    )
+    )'''
