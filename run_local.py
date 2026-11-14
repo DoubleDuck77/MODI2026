@@ -79,7 +79,7 @@ def _venv_version() -> str:
 
 def ensure_venv() -> Path:
     if not VENV.exists():
-        print(f"Tworzę środowisko {VENV} …")
+        print(f"Tworzę środowisko {VENV} …", flush=True)
         if subprocess.call([sys.executable, "-m", "venv", str(VENV)]) != 0:
             fail("Nie udało się utworzyć .venv.")
     elif not _venv_version().startswith("3.12"):
@@ -92,7 +92,7 @@ def ensure_venv() -> Path:
     vpy = venv_python()
     digest = hashlib.sha256(REQUIREMENTS.read_bytes()).hexdigest()
     if not STAMP.is_file() or STAMP.read_text(encoding="utf-8").strip() != digest:
-        print("Instaluję zależności z backend/requirements.txt (pierwszy raz kilka minut) …")
+        print("Instaluję zależności z backend/requirements.txt (pierwszy raz kilka minut) …", flush=True)
         cmd = [str(vpy), "-m", "pip", "install", "--disable-pip-version-check", "-r", str(REQUIREMENTS)]
         if subprocess.call(cmd) != 0:
             fail("pip install nie powiódł się — sprawdź połączenie z internetem i komunikat powyżej.")
