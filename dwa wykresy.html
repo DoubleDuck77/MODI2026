@@ -1,0 +1,2439 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Współrzędne miejsc, strefa czasowa i zakres dat</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      background-color: #000000;
+      color: #ffffff;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      color-scheme: dark;
+    }
+
+    .top-panel {
+      width: 100%;
+      padding: clamp(20px, 3vw, 34px) clamp(16px, 3.5vw, 48px) clamp(14px, 2vw, 22px);
+      display: flex;
+      flex-direction: column;
+      gap: clamp(20px, 2.6vw, 30px);
+    }
+
+    /* --- Przełącznik liczby wykresów (1 lub 2) przed sekcją wykresów i miejsc --- */
+    .chart-count-bar {
+      width: 100%;
+      padding: 6px clamp(16px, 3.5vw, 48px) 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+
+    .chart-count-label {
+      font-size: clamp(0.92rem, 1.15vw, 1.08rem);
+      color: #ffffff;
+      white-space: nowrap;
+    }
+
+    .segmented-switch {
+      display: inline-flex;
+      align-items: center;
+      background-color: #000000;
+      border: 1.5px solid #ffffff;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .switch-option {
+      appearance: none;
+      -webkit-appearance: none;
+      margin: 0;
+      padding: 7px 18px;
+      background-color: #000000;
+      color: #ffffff;
+      border: none;
+      font-family: inherit;
+      font-size: clamp(0.88rem, 1.05vw, 1rem);
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.15s ease, color 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .switch-option + .switch-option {
+      border-left: 1px solid rgba(255, 255, 255, 0.5);
+    }
+
+    .switch-option:hover:not(.active) {
+      background-color: rgba(255, 255, 255, 0.14);
+    }
+
+    .switch-option.active {
+      background-color: #ffffff;
+      color: #000000;
+      font-weight: 600;
+    }
+
+    .switch-option:focus-visible {
+      outline: 2px solid #38bdf8;
+      outline-offset: -2px;
+    }
+
+    /* --- Sekcja współrzędnych wewnątrz boxów wykresów --- */
+    .place-section {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .place-title {
+      margin: 0;
+      font-size: clamp(0.98rem, 1.35vw, 1.22rem);
+      font-weight: 500;
+      text-align: center;
+      color: #ffffff;
+    }
+
+    .coords-row {
+      width: 100%;
+      max-width: 480px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: clamp(10px, 2vw, 28px);
+    }
+
+    @media (max-width: 480px) {
+      .coords-row {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .field-group {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .field-group label {
+      font-size: clamp(0.88rem, 1.1vw, 1.02rem);
+      white-space: nowrap;
+    }
+
+    .field-group input[type="number"] {
+      width: clamp(76px, 8vw, 120px);
+      padding: 6px 10px;
+      background-color: #000000;
+      color: #ffffff;
+      border: 1px solid #ffffff;
+      border-radius: 4px;
+      font-size: clamp(0.88rem, 1.08vw, 1rem);
+      text-align: center;
+      outline: none;
+    }
+
+    .field-group input[type="number"]:focus {
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+    }
+
+    /* --- Wiersz: checkboxy w jednej symetrycznej linii --- */
+    .options-bar {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: clamp(14px, 2.2vw, 36px);
+      flex-wrap: wrap;
+    }
+
+    .options-left {
+      display: flex;
+      align-items: center;
+      justify-content: space-evenly;
+      flex: 2;
+      gap: clamp(12px, 2vw, 28px);
+      flex-wrap: wrap;
+    }
+
+    .options-right {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 3;
+      gap: clamp(10px, 1.4vw, 20px);
+      flex-wrap: wrap;
+    }
+
+    .panel-group-title {
+      font-size: clamp(0.82rem, 1.02vw, 1rem);
+      white-space: nowrap;
+    }
+
+    .panel-suboptions {
+      display: flex;
+      align-items: center;
+      gap: clamp(10px, 1.5vw, 22px);
+      padding-left: clamp(10px, 1.2vw, 16px);
+      border-left: 2px solid rgba(255, 255, 255, 0.65);
+      border-radius: 2px;
+      flex-wrap: wrap;
+    }
+
+    .checkbox-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: clamp(0.82rem, 1.02vw, 1rem);
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .checkbox-label input[type="checkbox"] {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      background-color: #000000;
+      border: 1.5px solid #ffffff;
+      border-radius: 3px;
+      cursor: pointer;
+      display: inline-grid;
+      place-content: center;
+      flex-shrink: 0;
+    }
+
+    .checkbox-label input[type="checkbox"]:checked {
+      background-color: #ffffff;
+    }
+
+    .checkbox-label input[type="checkbox"]:checked::before {
+      content: "";
+      width: 9px;
+      height: 5px;
+      border-left: 2px solid #000000;
+      border-bottom: 2px solid #000000;
+      transform: rotate(-45deg) translate(1px, -1px);
+    }
+
+    .checkbox-label input[type="checkbox"]:focus-visible {
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4);
+      outline: none;
+    }
+
+    /* --- Wiersz wyboru strefy czasowej --- */
+    .timezone-bar {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: clamp(10px, 1.8vw, 24px);
+    }
+
+    .timezone-label,
+    .timezone-or {
+      font-size: clamp(0.9rem, 1.15vw, 1.08rem);
+      white-space: nowrap;
+    }
+
+    .utc-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .utc-group label {
+      font-size: clamp(0.9rem, 1.15vw, 1.08rem);
+      white-space: nowrap;
+    }
+
+    .utc-group input[type="text"] {
+      width: clamp(74px, 7vw, 105px);
+      padding: 6px 10px;
+      background-color: #000000;
+      color: #ffffff;
+      border: 1px solid #ffffff;
+      border-radius: 4px;
+      font-size: clamp(0.9rem, 1.1vw, 1.02rem);
+      text-align: center;
+      outline: none;
+    }
+
+    .utc-group input[type="text"]::placeholder {
+      color: rgba(255, 255, 255, 0.4);
+    }
+
+    .utc-group input[type="text"]:focus {
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+    }
+
+    .tz-selects {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: clamp(10px, 1.5vw, 20px);
+    }
+
+    .tz-select {
+      min-width: clamp(170px, 16vw, 240px);
+      max-width: min(320px, 85vw);
+      padding: 6px 12px;
+      background-color: #000000;
+      color: #ffffff;
+      border: 1px solid #ffffff;
+      border-radius: 4px;
+      font-size: clamp(0.9rem, 1.1vw, 1.02rem);
+      cursor: pointer;
+      outline: none;
+    }
+
+    .tz-select:focus {
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+    }
+
+    .tz-select option {
+      background-color: #000000;
+      color: #ffffff;
+    }
+
+    /* --- Wiersz wyboru daty początkowej i końcowej --- */
+    .dates-section {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .dates-bar {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: clamp(16px, 4vw, 64px);
+    }
+
+    .date-group {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .date-group label {
+      font-size: clamp(0.9rem, 1.15vw, 1.08rem);
+      white-space: nowrap;
+    }
+
+    .date-group input[type="datetime-local"] {
+      padding: 6px 12px;
+      background-color: #000000;
+      color: #ffffff;
+      border: 1px solid #ffffff;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: clamp(0.9rem, 1.1vw, 1.02rem);
+      text-align: center;
+      cursor: pointer;
+      outline: none;
+    }
+
+    .date-group input[type="datetime-local"]:focus {
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+    }
+
+    .date-group input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+      cursor: pointer;
+      filter: invert(1);
+    }
+
+    /* --- Podświetlenie błędnych pól --- */
+    .input-error {
+      border-color: #f87171 !important;
+      box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.35) !important;
+    }
+
+    /* --- Przycisk generowania i komunikaty --- */
+    .actions-bar {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .generate-btn {
+      padding: 9px 26px;
+      background-color: #ffffff;
+      color: #000000;
+      border: 1.5px solid #ffffff;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: clamp(0.92rem, 1.1vw, 1.05rem);
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+    }
+
+    .generate-btn:hover:not(:disabled) {
+      background-color: #000000;
+      color: #ffffff;
+    }
+
+    .generate-btn:disabled {
+      opacity: 0.55;
+      cursor: wait;
+    }
+
+    .status-msg {
+      width: 100%;
+      text-align: center;
+      font-size: 0.86rem;
+      color: #f87171;
+      line-height: 1.4;
+    }
+
+    .status-msg.info {
+      color: #93c5fd;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* --- Sekcja wykresów (1 lub 2 lokalizacje) --- */
+    .charts-section {
+      width: 100%;
+      padding: 4px clamp(16px, 3.5vw, 48px) clamp(20px, 3vw, 32px);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: clamp(18px, 3vw, 40px);
+    }
+
+    .charts-section.single-chart {
+      grid-template-columns: 1fr;
+      max-width: 1120px;
+      margin: 0 auto;
+    }
+
+    @media (max-width: 1080px) {
+      .charts-section {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .chart-card {
+      background-color: #050505;
+      border: 1px solid rgba(255, 255, 255, 0.75);
+      border-radius: 6px;
+      padding: clamp(14px, 1.8vw, 22px);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .chart-header {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      text-align: center;
+    }
+
+    .chart-title {
+      margin: 0;
+      font-size: clamp(0.95rem, 1.25vw, 1.15rem);
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .chart-subtitle {
+      margin: 0;
+      font-size: clamp(0.8rem, 0.98vw, 0.92rem);
+      color: rgba(255, 255, 255, 0.72);
+    }
+
+    .chart-legend {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 14px;
+      font-size: 0.82rem;
+      color: rgba(255, 255, 255, 0.9);
+      padding: 4px 8px 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-swatch {
+      width: 16px;
+      height: 3px;
+      border-radius: 2px;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    .legend-swatch.dashed {
+      background: repeating-linear-gradient(
+        to right,
+        var(--swatch-color, #38bdf8) 0 4px,
+        transparent 4px 7px
+      );
+      height: 2px;
+    }
+
+    .legend-swatch.shaded {
+      width: 18px;
+      height: 12px;
+      background-color: rgba(56, 189, 248, 0.18);
+      border-left: 1.5px dashed rgba(56, 189, 248, 0.85);
+      border-right: 1.5px dashed rgba(56, 189, 248, 0.85);
+      border-top: 1px solid rgba(56, 189, 248, 0.35);
+      border-bottom: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: 1px;
+    }
+
+    .canvas-wrapper {
+      position: relative;
+      width: 100%;
+      height: clamp(310px, 37vh, 430px);
+    }
+
+    .canvas-wrapper canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: crosshair;
+    }
+
+    .chart-placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 20px;
+      color: rgba(255, 255, 255, 0.48);
+      font-size: 0.92rem;
+      border: 1px dashed rgba(255, 255, 255, 0.25);
+      border-radius: 4px;
+      pointer-events: none;
+    }
+
+    .chart-tooltip {
+      position: absolute;
+      z-index: 20;
+      pointer-events: none;
+      background-color: rgba(10, 10, 12, 0.94);
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      border-radius: 4px;
+      padding: 8px 11px;
+      font-size: 0.8rem;
+      line-height: 1.45;
+      color: #ffffff;
+      white-space: nowrap;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.75);
+    }
+
+    .chart-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+      gap: 8px;
+      padding-top: 6px;
+      border-top: 1px solid rgba(255, 255, 255, 0.16);
+    }
+
+    .stat-box {
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 4px;
+      padding: 6px 9px;
+      text-align: center;
+    }
+
+    .stat-label {
+      font-size: 0.74rem;
+      color: rgba(255, 255, 255, 0.65);
+      margin-bottom: 2px;
+    }
+
+    .stat-value {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    /* --- Sekcja obliczania zebranej energii dla wybranego interwału pod wykresami --- */
+    .interval-energy-section {
+      width: 100%;
+      padding: 0 clamp(16px, 3.5vw, 48px) clamp(28px, 4vw, 48px);
+    }
+
+    .interval-energy-section.single-chart {
+      max-width: 1120px;
+      margin: 0 auto;
+    }
+
+    .interval-energy-card {
+      width: 100%;
+      background-color: #050505;
+      border: 1px solid rgba(255, 255, 255, 0.75);
+      border-radius: 6px;
+      padding: clamp(16px, 2.2vw, 26px);
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .interval-energy-title {
+      margin: 0;
+      text-align: center;
+      font-size: clamp(1rem, 1.3vw, 1.2rem);
+      font-weight: 500;
+      color: #ffffff;
+    }
+
+    .interval-results-grid {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: clamp(16px, 4vw, 64px);
+    }
+
+    .interval-results-grid.single-chart {
+      grid-template-columns: 1fr;
+      max-width: 640px;
+      margin: 0 auto;
+    }
+
+    @media (max-width: 780px) {
+      .dates-bar,
+      .interval-results-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .interval-result-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 6px;
+      padding: 10px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 4px;
+    }
+
+    .interval-result-place {
+      font-size: 0.9rem;
+      color: rgba(255, 255, 255, 0.75);
+    }
+
+    .interval-result-value {
+      font-size: clamp(1rem, 1.25vw, 1.15rem);
+      font-weight: 600;
+      color: #ffffff;
+    }
+  </style>
+</head>
+<body>
+  <header class="top-panel">
+    <!-- 1. Wiersz z checkboxami w jednej linii (wybór pojedynczy) -->
+    <div class="options-bar">
+      <div class="options-left">
+        <label class="checkbox-label">
+          <input type="checkbox" id="chk-earth-alt" name="metric" value="earth_alt" />
+          <span>wysokość Ziemi nad horyzontem</span>
+        </label>
+
+        <label class="checkbox-label">
+          <input type="checkbox" id="chk-sun-alt" name="metric" value="sun_alt" />
+          <span>wysokość Słońca nad horyzontem</span>
+        </label>
+      </div>
+
+      <div class="options-right">
+        <span class="panel-group-title">natężenie padające na panel:</span>
+
+        <div class="panel-suboptions">
+          <label class="checkbox-label">
+            <input type="checkbox" id="chk-panel-parallel" name="metric" value="panel_parallel" />
+            <span>równoległy do powierzchni</span>
+          </label>
+
+          <label class="checkbox-label">
+            <input type="checkbox" id="chk-panel-perpendicular" name="metric" value="panel_perpendicular" />
+            <span>prostopadły do powierzchni</span>
+          </label>
+
+          <label class="checkbox-label">
+            <input type="checkbox" id="chk-panel-tracking" name="metric" value="panel_tracking" />
+            <span>podążający za Słońcem</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Wiersz wyboru strefy czasowej -->
+    <div class="timezone-bar">
+      <span class="timezone-label">Wybierz strefę czasową:</span>
+
+      <div class="utc-group">
+        <label for="utc-offset">UTC</label>
+        <input
+          type="text"
+          id="utc-offset"
+          name="utc_offset"
+          placeholder="+1"
+          aria-label="Przesunięcie względem UTC, np. +9, -5, +11:30"
+        />
+      </div>
+
+      <span class="timezone-or">lub</span>
+
+      <div class="tz-selects">
+        <select id="country-select" name="country" class="tz-select" aria-label="Wybierz kraj">
+          <option value="">kraj</option>
+        </select>
+
+        <select id="state-select" name="state" class="tz-select hidden" aria-label="Wybierz stan lub region">
+          <option value="">stan</option>
+        </select>
+      </div>
+
+      <div id="tz-status" class="status-msg hidden"></div>
+    </div>
+
+    <!-- 3. Wiersz wyboru daty początkowej i końcowej -->
+    <div class="dates-section">
+      <div class="dates-bar">
+        <div class="date-group">
+          <label for="date-start">Data początkowa:</label>
+          <input
+            type="datetime-local"
+            id="date-start"
+            name="date_start"
+            step="60"
+          />
+        </div>
+
+        <div class="date-group">
+          <label for="date-end">Data końcowa:</label>
+          <input
+            type="datetime-local"
+            id="date-end"
+            name="date_end"
+            step="60"
+          />
+        </div>
+      </div>
+      <div id="date-status" class="status-msg hidden"></div>
+    </div>
+
+    <!-- 4. Przycisk generowania i status obliczeń -->
+    <div class="actions-bar">
+      <button type="button" id="generate-btn" class="generate-btn">Generuj wykresy</button>
+      <div id="plot-status" class="status-msg hidden"></div>
+    </div>
+  </header>
+
+  <!-- Przełącznik liczby wykresów (1 lub 2) przed sekcją wykresów i wyborem miejsca -->
+  <div class="chart-count-bar">
+    <span class="chart-count-label" id="chart-count-label">Liczba wykresów:</span>
+    <div class="segmented-switch" role="group" aria-labelledby="chart-count-label">
+      <button type="button" class="switch-option" id="btn-count-1" data-count="1" aria-pressed="false">
+        1 wykres
+      </button>
+      <button type="button" class="switch-option active" id="btn-count-2" data-count="2" aria-pressed="true">
+        2 wykresy
+      </button>
+    </div>
+  </div>
+
+  <!-- 5. Sekcja z wykresami oraz współrzędnymi wewnątrz odpowiadających im boxów -->
+  <main class="charts-section" id="charts-section" aria-label="Wykresy dla wybranych lokalizacji">
+    <article class="chart-card" id="chart-card-1">
+      <section class="place-section">
+        <h2 class="place-title" id="place-title-1">Współrzędne pierwszego miejsca</h2>
+        <div class="coords-row">
+          <div class="field-group">
+            <label for="lat1">szerokość:</label>
+            <input id="lat1" name="lat1" type="number" step="any" min="-90" max="90" />
+          </div>
+          <div class="field-group">
+            <label for="lon1">długość:</label>
+            <input id="lon1" name="lon1" type="number" step="any" min="-180" max="180" />
+          </div>
+        </div>
+        <div id="coords-status-1" class="status-msg hidden"></div>
+      </section>
+
+      <div class="chart-header">
+        <h3 class="chart-title" id="chart-title-1">Pierwsze miejsce — wykres</h3>
+        <p class="chart-subtitle" id="chart-subtitle-1">Uzupełnij współrzędne oraz parametry powyżej, aby wygenerować wykres.</p>
+      </div>
+      <div class="chart-legend" id="chart-legend-1"></div>
+      <div class="canvas-wrapper">
+        <canvas id="chart-canvas-1"></canvas>
+        <div class="chart-placeholder" id="chart-placeholder-1">
+          Brak danych wykresu dla pierwszego miejsca
+        </div>
+        <div class="chart-tooltip hidden" id="chart-tooltip-1"></div>
+      </div>
+      <div class="chart-stats hidden" id="chart-stats-1"></div>
+    </article>
+
+    <article class="chart-card" id="chart-card-2">
+      <section class="place-section">
+        <h2 class="place-title" id="place-title-2">Współrzędne drugiego miejsca</h2>
+        <div class="coords-row">
+          <div class="field-group">
+            <label for="lat2">szerokość:</label>
+            <input id="lat2" name="lat2" type="number" step="any" min="-90" max="90" />
+          </div>
+          <div class="field-group">
+            <label for="lon2">długość:</label>
+            <input id="lon2" name="lon2" type="number" step="any" min="-180" max="180" />
+          </div>
+        </div>
+        <div id="coords-status-2" class="status-msg hidden"></div>
+      </section>
+
+      <div class="chart-header">
+        <h3 class="chart-title" id="chart-title-2">Drugie miejsce — wykres</h3>
+        <p class="chart-subtitle" id="chart-subtitle-2">Uzupełnij współrzędne oraz parametry powyżej, aby wygenerować wykres.</p>
+      </div>
+      <div class="chart-legend" id="chart-legend-2"></div>
+      <div class="canvas-wrapper">
+        <canvas id="chart-canvas-2"></canvas>
+        <div class="chart-placeholder" id="chart-placeholder-2">
+          Brak danych wykresu dla drugiego miejsca
+        </div>
+        <div class="chart-tooltip hidden" id="chart-tooltip-2"></div>
+      </div>
+      <div class="chart-stats hidden" id="chart-stats-2"></div>
+    </article>
+  </main>
+
+  <!-- 6. Sekcja wyboru interwału i obliczenia zebranej energii (tylko dla wykresów paneli) -->
+  <section class="interval-energy-section hidden" id="panel-interval-section" aria-label="Energia zebrana w wybranym interwale">
+    <div class="interval-energy-card">
+      <h3 class="interval-energy-title" id="interval-energy-title">
+        Oblicz energię zebraną przez panele w wybranym interwale (dla obu wykresów)
+      </h3>
+
+      <div class="dates-bar">
+        <div class="date-group">
+          <label for="interval-start">Data początkowa interwału:</label>
+          <input
+            type="datetime-local"
+            id="interval-start"
+            name="interval_start"
+            step="60"
+          />
+        </div>
+
+        <div class="date-group">
+          <label for="interval-end">Data końcowa interwału:</label>
+          <input
+            type="datetime-local"
+            id="interval-end"
+            name="interval_end"
+            step="60"
+          />
+        </div>
+      </div>
+
+      <div id="interval-status" class="status-msg hidden"></div>
+
+      <div class="interval-results-grid" id="interval-results-grid">
+        <div class="interval-result-box" id="interval-result-box-1">
+          <span class="interval-result-place" id="interval-result-place-1">
+            Pierwsze miejsce — energia zebrana w interwale:
+          </span>
+          <span class="interval-result-value" id="interval-energy-1">—</span>
+        </div>
+
+        <div class="interval-result-box" id="interval-result-box-2">
+          <span class="interval-result-place" id="interval-result-place-2">
+            Drugie miejsce — energia zebrana w interwale:
+          </span>
+          <span class="interval-result-value" id="interval-energy-2">—</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    const METRYKI_PANELI = new Set(["panel_parallel", "panel_perpendicular", "panel_tracking"]);
+
+    // --- Stan liczby wykresów (1 lub 2) ---
+    let liczbaWykresow = 2;
+
+    const btnCount1 = document.getElementById("btn-count-1");
+    const btnCount2 = document.getElementById("btn-count-2");
+    const chartsSection = document.getElementById("charts-section");
+    const chartCard2 = document.getElementById("chart-card-2");
+    const placeTitle1 = document.getElementById("place-title-1");
+    const intervalResultsGrid = document.getElementById("interval-results-grid");
+    const intervalResultBox2 = document.getElementById("interval-result-box-2");
+    const intervalResultPlace1 = document.getElementById("interval-result-place-1");
+    const intervalEnergyTitle = document.getElementById("interval-energy-title");
+    const generateBtn = document.getElementById("generate-btn");
+
+    function ustawLiczbeWykresow(nowaLiczba) {
+      if (nowaLiczba !== 1 && nowaLiczba !== 2) return;
+      liczbaWykresow = nowaLiczba;
+
+      const czyJeden = liczbaWykresow === 1;
+
+      btnCount1.classList.toggle("active", czyJeden);
+      btnCount1.setAttribute("aria-pressed", String(czyJeden));
+      btnCount2.classList.toggle("active", !czyJeden);
+      btnCount2.setAttribute("aria-pressed", String(!czyJeden));
+
+      chartsSection.classList.toggle("single-chart", czyJeden);
+      chartCard2.classList.toggle("hidden", czyJeden);
+
+      panelIntervalSection.classList.toggle("single-chart", czyJeden);
+      intervalResultsGrid.classList.toggle("single-chart", czyJeden);
+      intervalResultBox2.classList.toggle("hidden", czyJeden);
+
+      if (czyJeden) {
+        placeTitle1.textContent = "Współrzędne miejsca";
+        generateBtn.textContent = "Generuj wykres";
+        intervalEnergyTitle.textContent = "Oblicz energię zebraną przez panel w wybranym interwale";
+        intervalResultPlace1.textContent = "Energia zebrana w wybranym interwale:";
+        if (!stanWykresow[1]) {
+          document.getElementById("chart-title-1").textContent = "Wykres";
+          document.getElementById("chart-placeholder-1").textContent = "Brak danych wykresu";
+        }
+      } else {
+        placeTitle1.textContent = "Współrzędne pierwszego miejsca";
+        generateBtn.textContent = "Generuj wykresy";
+        intervalEnergyTitle.textContent = "Oblicz energię zebraną przez panele w wybranym interwale (dla obu wykresów)";
+        intervalResultPlace1.textContent = "Pierwsze miejsce — energia zebrana w interwale:";
+        if (!stanWykresow[1]) {
+          document.getElementById("chart-title-1").textContent = "Pierwsze miejsce — wykres";
+          document.getElementById("chart-placeholder-1").textContent = "Brak danych wykresu dla pierwszego miejsca";
+        }
+      }
+
+      // Przerysowanie istniejących wykresów po zmianie szerokości kolumn
+      requestAnimationFrame(() => {
+        if (stanWykresow[1]) rysujCanvasWykresu(1, null);
+        if (!czyJeden && stanWykresow[2]) rysujCanvasWykresu(2, null);
+      });
+
+      // Przy przełączeniu na 2 wykresy: jeśli wcześniej wygenerowano dane, dociągnij 2. miejsce (jeśli podano współrzędne)
+      if (!czyJeden && czyByloJuzGenerowane) {
+        const params = zbierzParametry(false);
+        if (params && !params.blad) {
+          generujWykresy(false);
+        }
+      }
+    }
+
+    btnCount1.addEventListener("click", () => ustawLiczbeWykresow(1));
+    btnCount2.addEventListener("click", () => ustawLiczbeWykresow(2));
+
+    // --- Automatyczne rozwijanie kalendarza i zegara po kliknięciu pola daty ---
+    document.querySelectorAll('input[type="datetime-local"]').forEach((dtInput) => {
+      dtInput.addEventListener("click", () => {
+        try {
+          if (typeof dtInput.showPicker === "function") {
+            dtInput.showPicker();
+          }
+        } catch {
+          // Ignoruj, jeśli przeglądarka zablokowała wywołanie lub picker jest już otwarty
+        }
+      });
+    });
+
+    // --- Pojedynczy wybór spośród 5 checkboxów ---
+    const checkboxes = document.querySelectorAll('.options-bar input[type="checkbox"]');
+    const panelIntervalSection = document.getElementById("panel-interval-section");
+
+    function czyWybranoWykresPanelu() {
+      const wybrany = Array.from(checkboxes).find((cb) => cb.checked);
+      return Boolean(wybrany && METRYKI_PANELI.has(wybrany.value));
+    }
+
+    function zaktualizujWidocznoscSekcjiInterwalu() {
+      if (czyWybranoWykresPanelu()) {
+        panelIntervalSection.classList.remove("hidden");
+        aktualizujOgraniczeniaInterwalu();
+        if (!intervalStartInput.value && dateStartInput.value) {
+          intervalStartInput.value = dateStartInput.value;
+        }
+        if (!intervalEndInput.value && dateEndInput.value) {
+          intervalEndInput.value = dateEndInput.value;
+        }
+        sprawdzZakresInterwalu();
+      } else {
+        panelIntervalSection.classList.add("hidden");
+      }
+    }
+
+    checkboxes.forEach((checkbox) => {
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) {
+          checkboxes.forEach((other) => {
+            if (other !== checkbox) {
+              other.checked = false;
+            }
+          });
+        }
+        zaktualizujWidocznoscSekcjiInterwalu();
+        sprobujAutomatycznieOdswiezyc();
+      });
+    });
+
+    // --- Współrzędne i walidacja błędów na żywo ---
+    const lat1Input = document.getElementById("lat1");
+    const lon1Input = document.getElementById("lon1");
+    const lat2Input = document.getElementById("lat2");
+    const lon2Input = document.getElementById("lon2");
+    const coordsStatus1 = document.getElementById("coords-status-1");
+    const coordsStatus2 = document.getElementById("coords-status-2");
+
+    function sprawdzWspolrzedneMiejsca(latInput, lonInput, statusEl, nazwaMiejsca, wymagajWypelnienia = false) {
+      const latRaw = latInput.value.trim();
+      const lonRaw = lonInput.value.trim();
+
+      latInput.classList.remove("input-error");
+      lonInput.classList.remove("input-error");
+
+      const bledy = [];
+
+      if (latRaw !== "") {
+        const lat = Number(latRaw);
+        if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+          latInput.classList.add("input-error");
+          bledy.push(`Błędna szerokość geograficzna ${nazwaMiejsca} (wymagany zakres: od -90° do 90°).`);
+        }
+      } else if (wymagajWypelnienia || latInput.validity.badInput) {
+        latInput.classList.add("input-error");
+        bledy.push(`Podaj poprawną szerokość geograficzna ${nazwaMiejsca} (od -90° do 90°).`);
+      }
+
+      if (lonRaw !== "") {
+        const lon = Number(lonRaw);
+        if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
+          lonInput.classList.add("input-error");
+          bledy.push(`Błędna długość geograficzna ${nazwaMiejsca} (wymagany zakres: od -180° do 180°).`);
+        }
+      } else if (wymagajWypelnienia || lonInput.validity.badInput) {
+        lonInput.classList.add("input-error");
+        bledy.push(`Podaj poprawną długość geograficzna ${nazwaMiejsca} (od -180° do 180°).`);
+      }
+
+      if (bledy.length > 0) {
+        statusEl.textContent = bledy.join(" ");
+        statusEl.classList.remove("hidden");
+        return false;
+      }
+
+      statusEl.classList.add("hidden");
+      return true;
+    }
+
+    [lat1Input, lon1Input].forEach((input) => {
+      input.addEventListener("input", () => {
+        const nazwa = liczbaWykresow === 1 ? "miejsca" : "pierwszego miejsca";
+        sprawdzWspolrzedneMiejsca(lat1Input, lon1Input, coordsStatus1, nazwa, false);
+        zaplanujOdswiezenie();
+      });
+      input.addEventListener("blur", () => {
+        if (lat1Input.value.trim() !== "" || lon1Input.value.trim() !== "") {
+          const nazwa = liczbaWykresow === 1 ? "miejsca" : "pierwszego miejsca";
+          sprawdzWspolrzedneMiejsca(lat1Input, lon1Input, coordsStatus1, nazwa, true);
+        }
+      });
+    });
+
+    [lat2Input, lon2Input].forEach((input) => {
+      input.addEventListener("input", () => {
+        sprawdzWspolrzedneMiejsca(lat2Input, lon2Input, coordsStatus2, "drugiego miejsca", false);
+        zaplanujOdswiezenie();
+      });
+      input.addEventListener("blur", () => {
+        if (lat2Input.value.trim() !== "" || lon2Input.value.trim() !== "") {
+          sprawdzWspolrzedneMiejsca(lat2Input, lon2Input, coordsStatus2, "drugiego miejsca", true);
+        }
+      });
+    });
+
+    // --- Strefy czasowe i walidacja na żywo ---
+    let krajeIStrefyIana = {};
+    let regionyIStrefyIana = {};
+
+    const utcOffsetInput = document.getElementById("utc-offset");
+    const countrySelect = document.getElementById("country-select");
+    const stateSelect = document.getElementById("state-select");
+    const tzStatus = document.getElementById("tz-status");
+
+    function normalizujOffsetUtc(rawVal) {
+      let s = rawVal.trim().replace(/^UTC/i, "").replace(".", ":").trim();
+      if (!s) return null;
+      if (/^\d{1,2}(?::\d{2})?$/.test(s)) {
+        s = "+" + s;
+      }
+      const match = s.match(/^([+-])(\d{1,2})(?::(\d{2}))?$/);
+      if (!match) {
+        return {
+          blad: "Błędna strefa czasowa. Wpisz przesunięcie UTC w formacie np. +1, -5 lub +11:30 (albo wybierz kraj).",
+        };
+      }
+      const znak = match[1];
+      const godz = parseInt(match[2], 10);
+      const min = match[3] ? parseInt(match[3], 10) : 0;
+      if (godz > 14 || (godz === 14 && min > 0) || min > 59) {
+        return {
+          blad: "Błędna strefa czasowa: przesunięcie UTC musi mieścić się w zakresie od -14:00 do +14:00.",
+        };
+      }
+      return {
+        wartosc: min > 0 ? `UTC${znak}${godz}:${String(min).padStart(2, "0")}` : `UTC${znak}${godz}`,
+      };
+    }
+
+    function sprawdzStrefeCzasowa(wymagajWyboru = false) {
+      const rawUtc = utcOffsetInput.value.trim();
+      const kraj = countrySelect.value;
+      const stan = stateSelect.value;
+
+      utcOffsetInput.classList.remove("input-error");
+      countrySelect.classList.remove("input-error");
+      stateSelect.classList.remove("input-error");
+
+      if (rawUtc) {
+        const norm = normalizujOffsetUtc(rawUtc);
+        if (norm && norm.blad) {
+          utcOffsetInput.classList.add("input-error");
+          tzStatus.textContent = norm.blad;
+          tzStatus.classList.remove("hidden");
+          return false;
+        }
+        tzStatus.classList.add("hidden");
+        return true;
+      }
+
+      if (kraj) {
+        if (krajeIStrefyIana[kraj] === "MULTIPLE" && !stan) {
+          if (wymagajWyboru) {
+            stateSelect.classList.add("input-error");
+            tzStatus.textContent = `Błędna strefa czasowa: wybierz stan lub region dla kraju "${kraj}".`;
+            tzStatus.classList.remove("hidden");
+          } else {
+            tzStatus.classList.add("hidden");
+          }
+          return false;
+        }
+        tzStatus.classList.add("hidden");
+        return true;
+      }
+
+      if (wymagajWyboru) {
+        utcOffsetInput.classList.add("input-error");
+        countrySelect.classList.add("input-error");
+        tzStatus.textContent = "Błędna strefa czasowa: wpisz przesunięcie UTC lub wybierz kraj z listy.";
+        tzStatus.classList.remove("hidden");
+      } else {
+        tzStatus.classList.add("hidden");
+      }
+      return false;
+    }
+
+    function wyciagnijSlownikZPythona(kodPythona, nazwaZmiennej) {
+      const startVar = kodPythona.indexOf(nazwaZmiennej);
+      if (startVar === -1) throw new Error(`Nie znaleziono zmiennej ${nazwaZmiennej}`);
+
+      const eqIndex = kodPythona.indexOf("=", startVar);
+      const braceStart = kodPythona.indexOf("{", eqIndex);
+      if (braceStart === -1) throw new Error(`Brak bloku '{' dla ${nazwaZmiennej}`);
+
+      let glebokosc = 0;
+      let wCudzyslowie = false;
+      let ucieczka = false;
+      let braceEnd = -1;
+
+      for (let i = braceStart; i < kodPythona.length; i++) {
+        const znak = kodPythona[i];
+        if (ucieczka) {
+          ucieczka = false;
+          continue;
+        }
+        if (znak === "\\") {
+          ucieczka = true;
+          continue;
+        }
+        if (znak === '"') {
+          wCudzyslowie = !wCudzyslowie;
+          continue;
+        }
+        if (!wCudzyslowie) {
+          if (znak === "{") glebokosc++;
+          else if (znak === "}") {
+            glebokosc--;
+            if (glebokosc === 0) {
+              braceEnd = i;
+              break;
+            }
+          }
+        }
+      }
+
+      if (braceEnd === -1) throw new Error(`Niedomknięty słownik ${nazwaZmiennej}`);
+      const jsonStr = kodPythona
+        .slice(braceStart, braceEnd + 1)
+        .replace(/,\s*([}\]])/g, "$1");
+      return JSON.parse(jsonStr);
+    }
+
+    async function zaladujStrefyCzasowe() {
+      try {
+        const respApi = await fetch("/api/strefy");
+        if (!respApi.ok) throw new Error("Brak endpointu /api/strefy");
+        const dane = await respApi.json();
+        krajeIStrefyIana = dane.kraje;
+        regionyIStrefyIana = dane.regiony;
+      } catch {
+        try {
+          const respPy = await fetch("time_zone_converter.py");
+          if (!respPy.ok) throw new Error("Nie można pobrać time_zone_converter.py");
+          const kodPy = await respPy.text();
+          krajeIStrefyIana = wyciagnijSlownikZPythona(kodPy, "kraje_i_strefy_iana");
+          regionyIStrefyIana = wyciagnijSlownikZPythona(kodPy, "regiony_i_strefy_iana");
+        } catch (err) {
+          tzStatus.textContent =
+            "Nie udało się wczytać danych z time_zone_converter.py. Uruchom 'python server.py' w folderze projektu i otwórz http://127.0.0.1:8000";
+          tzStatus.classList.remove("hidden");
+          return;
+        }
+      }
+
+      countrySelect.innerHTML = '<option value="">kraj</option>';
+      Object.keys(krajeIStrefyIana).forEach((kraj) => {
+        const option = document.createElement("option");
+        option.value = kraj;
+        option.textContent = kraj;
+        countrySelect.appendChild(option);
+      });
+    }
+
+    function zaktualizujListeStanow() {
+      const wybranyKraj = countrySelect.value;
+      stateSelect.innerHTML = '<option value="">stan</option>';
+
+      if (wybranyKraj && krajeIStrefyIana[wybranyKraj] === "MULTIPLE") {
+        const regiony = regionyIStrefyIana[wybranyKraj] || {};
+        Object.keys(regiony).forEach((region) => {
+          const option = document.createElement("option");
+          option.value = region;
+          option.textContent = region;
+          stateSelect.appendChild(option);
+        });
+        stateSelect.classList.remove("hidden");
+      } else {
+        stateSelect.classList.add("hidden");
+      }
+    }
+
+    function wyczyscKrajIStan() {
+      countrySelect.value = "";
+      stateSelect.value = "";
+      stateSelect.innerHTML = '<option value="">stan</option>';
+      stateSelect.classList.add("hidden");
+      countrySelect.classList.remove("input-error");
+      stateSelect.classList.remove("input-error");
+    }
+
+    function wyczyscUtc() {
+      utcOffsetInput.value = "";
+      utcOffsetInput.classList.remove("input-error");
+    }
+
+    utcOffsetInput.addEventListener("focus", wyczyscKrajIStan);
+    utcOffsetInput.addEventListener("input", () => {
+      wyczyscKrajIStan();
+      sprawdzStrefeCzasowa(false);
+      zaplanujOdswiezenie();
+    });
+    utcOffsetInput.addEventListener("blur", () => {
+      if (utcOffsetInput.value.trim() !== "") {
+        sprawdzStrefeCzasowa(true);
+      }
+    });
+
+    countrySelect.addEventListener("focus", wyczyscUtc);
+    countrySelect.addEventListener("change", () => {
+      wyczyscUtc();
+      zaktualizujListeStanow();
+      sprawdzStrefeCzasowa(false);
+      sprobujAutomatycznieOdswiezyc();
+    });
+
+    stateSelect.addEventListener("focus", wyczyscUtc);
+    stateSelect.addEventListener("change", () => {
+      wyczyscUtc();
+      sprawdzStrefeCzasowa(false);
+      sprobujAutomatycznieOdswiezyc();
+    });
+
+    // --- Zakres dat nad wykresami (zakaz identycznych dat oraz końca przed początkiem) ---
+    const dateStartInput = document.getElementById("date-start");
+    const dateEndInput = document.getElementById("date-end");
+    const dateStatus = document.getElementById("date-status");
+
+    function aktualizujOgraniczeniaInterwalu() {
+      const startVal = dateStartInput.value;
+      const endVal = dateEndInput.value;
+
+      if (startVal) {
+        intervalStartInput.min = startVal;
+        intervalEndInput.min = startVal;
+      } else {
+        intervalStartInput.removeAttribute("min");
+        intervalEndInput.removeAttribute("min");
+      }
+
+      if (endVal) {
+        intervalStartInput.max = endVal;
+        intervalEndInput.max = endVal;
+      } else {
+        intervalStartInput.removeAttribute("max");
+        intervalEndInput.removeAttribute("max");
+      }
+    }
+
+    function sprawdzZakresDat(wymagajWypelnienia = false) {
+      const startVal = dateStartInput.value;
+      const endVal = dateEndInput.value;
+
+      dateStartInput.classList.remove("input-error");
+      dateEndInput.classList.remove("input-error");
+
+      if (startVal && endVal && endVal <= startVal) {
+        dateStartInput.classList.add("input-error");
+        dateEndInput.classList.add("input-error");
+        dateStatus.textContent =
+          endVal === startVal
+            ? "Błąd zakresu dat: data początkowa i data końcowa nie mogą być identyczne."
+            : "Błąd zakresu dat: data końcowa nie może być wcześniejsza niż data początkowa.";
+        dateStatus.classList.remove("hidden");
+        return false;
+      }
+
+      if (wymagajWypelnienia && (!startVal || !endVal)) {
+        if (!startVal) dateStartInput.classList.add("input-error");
+        if (!endVal) dateEndInput.classList.add("input-error");
+        dateStatus.textContent = "Wybierz zarówno datę początkową, jak i datę końcową.";
+        dateStatus.classList.remove("hidden");
+        return false;
+      }
+
+      dateStatus.classList.add("hidden");
+      return true;
+    }
+
+    ["input", "change"].forEach((evtName) => {
+      dateStartInput.addEventListener(evtName, () => {
+        sprawdzZakresDat(false);
+        aktualizujOgraniczeniaInterwalu();
+        if (!czyInterwalZmienionyRecznie) {
+          intervalStartInput.value = dateStartInput.value;
+        }
+        if (czyWybranoWykresPanelu()) {
+          przeliczEnergieWInterwale();
+        }
+        if (evtName === "change") sprobujAutomatycznieOdswiezyc();
+      });
+
+      dateEndInput.addEventListener(evtName, () => {
+        sprawdzZakresDat(false);
+        aktualizujOgraniczeniaInterwalu();
+        if (!czyInterwalZmienionyRecznie) {
+          intervalEndInput.value = dateEndInput.value;
+        }
+        if (czyWybranoWykresPanelu()) {
+          przeliczEnergieWInterwale();
+        }
+        if (evtName === "change") sprobujAutomatycznieOdswiezyc();
+      });
+    });
+
+    function pobierzZakresDat() {
+      return {
+        data_poczatek: dateStartInput.value ? dateStartInput.value.replace("T", " ") : null,
+        data_koniec: dateEndInput.value ? dateEndInput.value.replace("T", " ") : null,
+      };
+    }
+
+    // --- Walidacja i zbieranie parametrów dla 1 lub 2 wykresów ---
+    const plotStatus = document.getElementById("plot-status");
+
+    function zbierzParametry(pokazBledy = true) {
+      const nazwa1 = liczbaWykresow === 1 ? "miejsca" : "pierwszego miejsca";
+      const ok1 = sprawdzWspolrzedneMiejsca(lat1Input, lon1Input, coordsStatus1, nazwa1, pokazBledy);
+      const ok2 =
+        liczbaWykresow === 2
+          ? sprawdzWspolrzedneMiejsca(lat2Input, lon2Input, coordsStatus2, "drugiego miejsca", pokazBledy)
+          : true;
+
+      if (!ok1 || !ok2) {
+        return pokazBledy ? { blad: "Popraw błędne współrzędne geograficzne w sekcji wykresu." } : null;
+      }
+
+      const lat1 = parseFloat(lat1Input.value);
+      const lon1 = parseFloat(lon1Input.value);
+      if (!Number.isFinite(lat1) || !Number.isFinite(lon1)) {
+        return null;
+      }
+
+      let lat2 = lat1;
+      let lon2 = lon1;
+      if (liczbaWykresow === 2) {
+        lat2 = parseFloat(lat2Input.value);
+        lon2 = parseFloat(lon2Input.value);
+        if (!Number.isFinite(lat2) || !Number.isFinite(lon2)) {
+          return null;
+        }
+      }
+
+      const wybranyCheckbox = Array.from(checkboxes).find((cb) => cb.checked);
+      if (!wybranyCheckbox) {
+        return pokazBledy ? { blad: "Zaznacz jeden z 5 typów wykresu." } : null;
+      }
+
+      const okTz = sprawdzStrefeCzasowa(pokazBledy);
+      if (!okTz) {
+        return pokazBledy ? { blad: tzStatus.textContent || "Wybierz poprawną strefę czasową." } : null;
+      }
+
+      const rawUtc = utcOffsetInput.value.trim();
+      const kraj = countrySelect.value;
+      const stan = stateSelect.value;
+      let strefaPayload = null;
+
+      if (rawUtc) {
+        const norm = normalizujOffsetUtc(rawUtc);
+        strefaPayload = { utc_offset: norm.wartosc, kraj: null, region: null };
+      } else {
+        strefaPayload = { utc_offset: null, kraj: kraj, region: stan || null };
+      }
+
+      const okDaty = sprawdzZakresDat(pokazBledy);
+      if (!okDaty) {
+        return pokazBledy ? { blad: dateStatus.textContent || "Popraw zakres dat." } : null;
+      }
+
+      const { data_poczatek, data_koniec } = pobierzZakresDat();
+      if (!data_poczatek || !data_koniec) {
+        return null;
+      }
+
+      return {
+        liczba_wykresow: liczbaWykresow,
+        lat1,
+        lon1,
+        lat2,
+        lon2,
+        metric: wybranyCheckbox.value,
+        data_poczatek,
+        data_koniec,
+        ...strefaPayload,
+      };
+    }
+
+    // --- Przechowywanie surowych danych paneli do obliczania energii w wybranym interwale ---
+    const danePaneliDoInterwalu = {
+      metric: null,
+      miejsce1: null,
+      miejsce2: null,
+    };
+
+    const intervalStartInput = document.getElementById("interval-start");
+    const intervalEndInput = document.getElementById("interval-end");
+    const intervalStatus = document.getElementById("interval-status");
+    const intervalEnergy1El = document.getElementById("interval-energy-1");
+    const intervalEnergy2El = document.getElementById("interval-energy-2");
+
+    let czyInterwalZmienionyRecznie = false;
+    let kontrolerZapytaniaInterwalu = null;
+
+    function parsujDateDoMs(str) {
+      if (!str) return NaN;
+      const norm = str.trim().replace(" ", "T");
+      return Date.parse(norm);
+    }
+
+    function formatujEnergiaTekst(energiaJ) {
+      if (!Number.isFinite(energiaJ)) return "—";
+      const jZaokraglone = Math.max(0, energiaJ);
+      const kwh = jZaokraglone / 3_600_000;
+      const jStr =
+        jZaokraglone >= 1e7
+          ? jZaokraglone.toExponential(3)
+          : jZaokraglone.toLocaleString("pl-PL", { maximumFractionDigits: 0 });
+      const kwhStr = kwh.toLocaleString("pl-PL", {
+        minimumFractionDigits: 3,
+        maximumFractionDigits: 3,
+      });
+      return `${jStr} J/m² (${kwhStr} kWh/m²)`;
+    }
+
+    function interpolujEnergieSkumulowana(datyMs, energiaJ, docelowyMs) {
+      const n = datyMs.length;
+      if (n === 0) return NaN;
+      if (docelowyMs <= datyMs[0]) return energiaJ[0];
+      if (docelowyMs >= datyMs[n - 1]) return energiaJ[n - 1];
+
+      let lo = 0;
+      let hi = n - 1;
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        if (datyMs[mid] <= docelowyMs) lo = mid;
+        else hi = mid;
+      }
+
+      const dt = datyMs[hi] - datyMs[lo];
+      if (dt <= 0) return energiaJ[lo];
+      const frac = (docelowyMs - datyMs[lo]) / dt;
+      return energiaJ[lo] + frac * (energiaJ[hi] - energiaJ[lo]);
+    }
+
+    function sprawdzZakresInterwalu() {
+      const startVal = intervalStartInput.value;
+      const endVal = intervalEndInput.value;
+      const chartStart = dateStartInput.value;
+      const chartEnd = dateEndInput.value;
+
+      intervalStartInput.classList.remove("input-error");
+      intervalEndInput.classList.remove("input-error");
+
+      // 1. Sprawdzenie czy interwał nie wykracza poza zadany zakres wykresów
+      const startPozaZakresem =
+        Boolean(startVal) && ((Boolean(chartStart) && startVal < chartStart) || (Boolean(chartEnd) && startVal > chartEnd));
+      const endPozaZakresem =
+        Boolean(endVal) && ((Boolean(chartStart) && endVal < chartStart) || (Boolean(chartEnd) && endVal > chartEnd));
+
+      if (startPozaZakresem || endPozaZakresem) {
+        if (startPozaZakresem) intervalStartInput.classList.add("input-error");
+        if (endPozaZakresem) intervalEndInput.classList.add("input-error");
+
+        const zakresTekst =
+          chartStart && chartEnd
+            ? ` (${chartStart.replace("T", " ")} – ${chartEnd.replace("T", " ")})`
+            : "";
+        intervalStatus.textContent = `Błąd interwału: zakres dat do obliczenia zebranej energii nie może wykraczać poza zadany zakres wykresów${zakresTekst}.`;
+        intervalStatus.classList.remove("hidden", "info");
+        intervalEnergy1El.textContent = "—";
+        intervalEnergy2El.textContent = "—";
+        return false;
+      }
+
+      // 2. Sprawdzenie czy daty interwału nie są identyczne i czy koniec nie jest przed początkiem
+      if (startVal && endVal && endVal <= startVal) {
+        intervalStartInput.classList.add("input-error");
+        intervalEndInput.classList.add("input-error");
+        intervalStatus.textContent =
+          endVal === startVal
+            ? "Błąd interwału: data początkowa i data końcowa interwału nie mogą być identyczne."
+            : "Błąd interwału: data końcowa nie może być wcześniejsza niż data początkowa.";
+        intervalStatus.classList.remove("hidden", "info");
+        intervalEnergy1El.textContent = "—";
+        intervalEnergy2El.textContent = "—";
+        return false;
+      }
+
+      intervalStatus.classList.add("hidden");
+      intervalStatus.classList.remove("info");
+      return true;
+    }
+
+    async function przeliczEnergieWInterwale() {
+      if (!czyWybranoWykresPanelu()) return;
+      if (!sprawdzZakresInterwalu()) {
+        if (stanWykresow[1]) rysujCanvasWykresu(1, null);
+        if (liczbaWykresow === 2 && stanWykresow[2]) rysujCanvasWykresu(2, null);
+        return;
+      }
+
+      const startVal = intervalStartInput.value;
+      const endVal = intervalEndInput.value;
+
+      if (!startVal || !endVal) {
+        intervalEnergy1El.textContent = "Wybierz początek i koniec interwału";
+        intervalEnergy2El.textContent = "Wybierz początek i koniec interwału";
+        if (stanWykresow[1]) rysujCanvasWykresu(1, null);
+        if (liczbaWykresow === 2 && stanWykresow[2]) rysujCanvasWykresu(2, null);
+        return;
+      }
+
+      const startMs = parsujDateDoMs(startVal);
+      const endMs = parsujDateDoMs(endVal);
+      const wybranyCheckbox = Array.from(checkboxes).find((cb) => cb.checked);
+      const aktualnaMetryka = wybranyCheckbox ? wybranyCheckbox.value : null;
+
+      const d1 = danePaneliDoInterwalu.miejsce1;
+      const d2 = danePaneliDoInterwalu.miejsce2;
+
+      const czyMamyDane1 =
+        d1 &&
+        danePaneliDoInterwalu.metric === aktualnaMetryka &&
+        d1.datyMs.length > 0 &&
+        startMs >= d1.datyMs[0] &&
+        endMs <= d1.datyMs[d1.datyMs.length - 1];
+
+      const czyMamyDane2 =
+        liczbaWykresow === 1 ||
+        (d2 &&
+          danePaneliDoInterwalu.metric === aktualnaMetryka &&
+          d2.datyMs.length > 0 &&
+          startMs >= d2.datyMs[0] &&
+          endMs <= d2.datyMs[d2.datyMs.length - 1]);
+
+      if (czyMamyDane1 && czyMamyDane2) {
+        const e1 =
+          interpolujEnergieSkumulowana(d1.datyMs, d1.energiaJ, endMs) -
+          interpolujEnergieSkumulowana(d1.datyMs, d1.energiaJ, startMs);
+        intervalEnergy1El.textContent = formatujEnergiaTekst(e1);
+
+        if (liczbaWykresow === 2 && d2) {
+          const e2 =
+            interpolujEnergieSkumulowana(d2.datyMs, d2.energiaJ, endMs) -
+            interpolujEnergieSkumulowana(d2.datyMs, d2.energiaJ, startMs);
+          intervalEnergy2El.textContent = formatujEnergiaTekst(e2);
+        }
+
+        if (stanWykresow[1]) rysujCanvasWykresu(1, null);
+        if (liczbaWykresow === 2 && stanWykresow[2]) rysujCanvasWykresu(2, null);
+        return;
+      }
+
+      const baseParams = zbierzParametry(false);
+      if (!baseParams || baseParams.blad) {
+        const msgBrak =
+          liczbaWykresow === 1
+            ? "Uzupełnij współrzędne, strefę czasową i wygeneruj wykres"
+            : "Uzupełnij współrzędne, strefę czasową i wygeneruj wykresy";
+        intervalEnergy1El.textContent = msgBrak;
+        intervalEnergy2El.textContent = msgBrak;
+        return;
+      }
+
+      if (kontrolerZapytaniaInterwalu) {
+        kontrolerZapytaniaInterwalu.abort();
+      }
+      kontrolerZapytaniaInterwalu = new AbortController();
+
+      intervalStatus.textContent = "Obliczanie zebranej energii dla wybranego interwału...";
+      intervalStatus.classList.remove("hidden");
+      intervalStatus.classList.add("info");
+
+      try {
+        const payload = {
+          ...baseParams,
+          data_poczatek: startVal.replace("T", " "),
+          data_koniec: endVal.replace("T", " "),
+        };
+
+        const resp = await fetch("/api/wykresy", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: kontrolerZapytaniaInterwalu.signal,
+        });
+
+        if (!resp.ok) {
+          let komunikat = `Błąd serwera (${resp.status})`;
+          try {
+            const errJson = await resp.json();
+            if (errJson.error) komunikat = errJson.error;
+          } catch {}
+          throw new Error(komunikat);
+        }
+
+        const wynik = await resp.json();
+        if (wynik.error) throw new Error(wynik.error);
+
+        const arr1 = wynik.miejsce1.energia_skumulowana_j_m2 || [];
+        const e1 = arr1.length ? arr1[arr1.length - 1] : 0;
+        intervalEnergy1El.textContent = formatujEnergiaTekst(e1);
+
+        if (liczbaWykresow === 2 && wynik.miejsce2) {
+          const arr2 = wynik.miejsce2.energia_skumulowana_j_m2 || [];
+          const e2 = arr2.length ? arr2[arr2.length - 1] : 0;
+          intervalEnergy2El.textContent = formatujEnergiaTekst(e2);
+        }
+
+        intervalStatus.classList.add("hidden");
+        intervalStatus.classList.remove("info");
+
+        if (stanWykresow[1]) rysujCanvasWykresu(1, null);
+        if (liczbaWykresow === 2 && stanWykresow[2]) rysujCanvasWykresu(2, null);
+      } catch (err) {
+        if (err.name === "AbortError") return;
+        intervalStatus.textContent = `Nie udało się obliczyć energii w interwale: ${err.message || err}`;
+        intervalStatus.classList.remove("hidden", "info");
+      }
+    }
+
+    ["input", "change"].forEach((evtName) => {
+      intervalStartInput.addEventListener(evtName, () => {
+        czyInterwalZmienionyRecznie = true;
+        przeliczEnergieWInterwale();
+      });
+
+      intervalEndInput.addEventListener(evtName, () => {
+        czyInterwalZmienionyRecznie = true;
+        przeliczEnergieWInterwale();
+      });
+    });
+
+    // --- Renderowanie interaktywnych wykresów na <canvas> ---
+    const stanWykresow = {
+      1: null,
+      2: null,
+    };
+
+    function formatujLiczbe(val, precyzja = 2) {
+      if (!Number.isFinite(val)) return "—";
+      if (Math.abs(val) >= 1e6) {
+        return val.toExponential(3);
+      }
+      return val.toLocaleString("pl-PL", {
+        minimumFractionDigits: precyzja,
+        maximumFractionDigits: precyzja,
+      });
+    }
+
+    function budujKonfiguracjeWykresu(metric, daneMiejsca, indeksMiejsca) {
+      const nazwaMiejsca =
+        liczbaWykresow === 1
+          ? "Wybrane miejsce"
+          : indeksMiejsca === 1
+            ? "Pierwsze miejsce"
+            : "Drugie miejsce";
+      const latTxt = `${daneMiejsca.lat >= 0 ? "+" : ""}${daneMiejsca.lat.toFixed(2)}°`;
+      const lonTxt = `${daneMiejsca.lon >= 0 ? "+" : ""}${daneMiejsca.lon.toFixed(2)}°`;
+      const podtytul = `${nazwaMiejsca} (Lat: ${latTxt}, Lon: ${lonTxt})`;
+      const osXEtykieta = `Czas (${daneMiejsca.strefa_utc})`;
+
+      if (metric === "earth_alt") {
+        const y1 = daneMiejsca.elewacja_ziemi_deg;
+        const y2 = daneMiejsca.wysokosc_gor_deg;
+        const maxVal = Math.max(...y1);
+        const minVal = Math.min(...y1);
+        const widoczne = y1.filter((v, idx) => v > y2[idx]).length;
+        const procWidoczne = y1.length ? (widoczne / y1.length) * 100 : 0;
+
+        return {
+          tytul: "Wysokość dolnej części tarczy Ziemi oraz wysokość kątowa gór",
+          podtytul,
+          osXEtykieta,
+          osYLewaEtykieta: "Wysokość kątowa [°]",
+          osYPrawaEtykieta: null,
+          daty: daneMiejsca.daty,
+          seria1: {
+            nazwa: "Wysokość dolnej części tarczy Ziemi [°]",
+            dane: y1,
+            kolor: "#3b82f6",
+            jednostka: "°",
+          },
+          seria2: {
+            nazwa: "Wysokość kątowa gór (azymut Ziemi) [°]",
+            dane: y2,
+            kolor: "#94a3b8",
+            jednostka: "°",
+          },
+          wypelnienie: {
+            kolor: "rgba(56, 189, 248, 0.25)",
+            tryb: "above_series2",
+          },
+          liniaZero: true,
+          czyPanel: false,
+          statystyki: [
+            { label: "Maks. elewacja Ziemi", value: `${maxVal >= 0 ? "+" : ""}${maxVal.toFixed(2)}°` },
+            { label: "Min. elewacja Ziemi", value: `${minVal >= 0 ? "+" : ""}${minVal.toFixed(2)}°` },
+            { label: "Cała tarcza nad górami", value: `${procWidoczne.toFixed(1)}% czasu` },
+          ],
+        };
+      }
+
+      if (metric === "sun_alt") {
+        const y1 = daneMiejsca.elewacja_slonca_deg;
+        const y2 = daneMiejsca.wysokosc_gor_deg;
+        const maxVal = Math.max(...y1);
+        const minVal = Math.min(...y1);
+        const widoczne = y1.filter((v, idx) => v > y2[idx]).length;
+        const procWidoczne = y1.length ? (widoczne / y1.length) * 100 : 0;
+
+        return {
+          tytul: "Wysokość górnej części tarczy Słońca oraz wysokość kątowa gór",
+          podtytul,
+          osXEtykieta,
+          osYLewaEtykieta: "Wysokość kątowa [°]",
+          osYPrawaEtykieta: null,
+          daty: daneMiejsca.daty,
+          seria1: {
+            nazwa: "Wysokość górnej części tarczy Słońca [°]",
+            dane: y1,
+            kolor: "#f59e0b",
+            jednostka: "°",
+          },
+          seria2: {
+            nazwa: "Wysokość kątowa gór (azymut Słońca) [°]",
+            dane: y2,
+            kolor: "#94a3b8",
+            jednostka: "°",
+          },
+          wypelnienie: {
+            kolor: "rgba(253, 224, 71, 0.24)",
+            tryb: "above_series2",
+          },
+          liniaZero: true,
+          czyPanel: false,
+          statystyki: [
+            { label: "Maks. elewacja Słońca", value: `${maxVal >= 0 ? "+" : ""}${maxVal.toFixed(2)}°` },
+            { label: "Min. elewacja Słońca", value: `${minVal >= 0 ? "+" : ""}${minVal.toFixed(2)}°` },
+            { label: "Tarcza widoczna", value: `${procWidoczne.toFixed(1)}% czasu` },
+          ],
+        };
+      }
+
+      const opisyPaneli = {
+        panel_parallel: {
+          tytul: "Natężenie promieniowania — panel równoległy do powierzchni",
+          seria1Nazwa: "Natężenie poziome: I_S·sin(z)·α [W/m²]",
+          kolor1: "#f59e0b",
+          wypelnienieKolor: "rgba(253, 224, 71, 0.22)",
+        },
+        panel_perpendicular: {
+          tytul: "Natężenie promieniowania — panel prostopadły do powierzchni",
+          seria1Nazwa: "Natężenie pionowe: I_S·cos(z)·α [W/m²]",
+          kolor1: "#ef4444",
+          wypelnienieKolor: "rgba(252, 165, 165, 0.22)",
+        },
+        panel_tracking: {
+          tytul: "Natężenie promieniowania — panel podążający za Słońcem",
+          seria1Nazwa: "Natężenie śledzące: I_S·α [W/m²]",
+          kolor1: "#a855f7",
+          wypelnienieKolor: "rgba(196, 181, 253, 0.24)",
+        },
+      };
+
+      const meta = opisyPaneli[metric];
+      const natezenie = daneMiejsca.natezenie_w_m2;
+      const maxNat = Math.max(...natezenie);
+      const srNat = natezenie.reduce((acc, v) => acc + v, 0) / (natezenie.length || 1);
+      const oswietlone = natezenie.filter((v) => v > 0).length;
+      const procOswietlone = natezenie.length ? (oswietlone / natezenie.length) * 100 : 0;
+
+      return {
+        tytul: meta.tytul,
+        podtytul,
+        osXEtykieta,
+        osYLewaEtykieta: "Natężenie [W/m²]",
+        osYPrawaEtykieta: null,
+        daty: daneMiejsca.daty,
+        seria1: {
+          nazwa: meta.seria1Nazwa,
+          dane: natezenie,
+          kolor: meta.kolor1,
+          jednostka: "W/m²",
+        },
+        seria2: null,
+        wypelnienie: {
+          kolor: meta.wypelnienieKolor,
+          tryb: "above_zero",
+        },
+        liniaZero: false,
+        czyPanel: true,
+        statystyki: [
+          { label: "Maks. natężenie", value: `${maxNat.toFixed(1)} W/m²` },
+          { label: "Średnie natężenie", value: `${srNat.toFixed(1)} W/m²` },
+          { label: "Oświetlenie słoneczne", value: `${procOswietlone.toFixed(1)}% czasu` },
+        ],
+      };
+    }
+
+    function aktualizujKarteWykresu(indeks, metric, daneMiejsca) {
+      const cfg = budujKonfiguracjeWykresu(metric, daneMiejsca, indeks);
+      stanWykresow[indeks] = cfg;
+
+      document.getElementById(`chart-title-${indeks}`).textContent = cfg.tytul;
+      document.getElementById(`chart-subtitle-${indeks}`).textContent = cfg.podtytul;
+      document.getElementById(`chart-placeholder-${indeks}`).classList.add("hidden");
+
+      const legendEl = document.getElementById(`chart-legend-${indeks}`);
+      legendEl.innerHTML = `
+        <span class="legend-item">
+          <span class="legend-swatch" style="background-color: ${cfg.seria1.kolor};"></span>
+          <span>${cfg.seria1.nazwa}</span>
+        </span>
+        ${
+          cfg.seria2
+            ? `<span class="legend-item">
+                <span class="legend-swatch" style="background-color: ${cfg.seria2.kolor};"></span>
+                <span>${cfg.seria2.nazwa}</span>
+              </span>`
+            : ""
+        }
+        ${
+          cfg.liniaZero
+            ? `<span class="legend-item">
+                <span class="legend-swatch dashed" style="--swatch-color: #38bdf8;"></span>
+                <span>Horyzont matematyczny (0°)</span>
+              </span>`
+            : ""
+        }
+        ${
+          cfg.czyPanel
+            ? `<span class="legend-item">
+                <span class="legend-swatch shaded"></span>
+                <span>Zacieniowany obszar — obszar sumowania zliczonej energii</span>
+              </span>`
+            : ""
+        }
+      `;
+
+      const statsEl = document.getElementById(`chart-stats-${indeks}`);
+      statsEl.innerHTML = cfg.statystyki
+        .map(
+          (st) => `
+          <div class="stat-box">
+            <div class="stat-label">${st.label}</div>
+            <div class="stat-value">${st.value}</div>
+          </div>`
+        )
+        .join("");
+      statsEl.classList.remove("hidden");
+
+      rysujCanvasWykresu(indeks, null);
+    }
+
+    function obliczSkaleOsi(wartosci, wymusZero = false) {
+      let minV = Math.min(...wartosci);
+      let maxV = Math.max(...wartosci);
+      if (wymusZero) {
+        minV = Math.min(0, minV);
+        maxV = Math.max(0, maxV);
+      }
+      if (Math.abs(maxV - minV) < 1e-9) {
+        minV -= 1;
+        maxV += 1;
+      } else {
+        const margines = (maxV - minV) * 0.08;
+        if (!wymusZero || minV < 0) minV -= margines;
+        maxV += margines;
+      }
+      return { min: minV, max: maxV };
+    }
+
+    function rysujCanvasWykresu(indeks, hoverIndex) {
+      const cfg = stanWykresow[indeks];
+      const canvas = document.getElementById(`chart-canvas-${indeks}`);
+      if (!canvas) return;
+
+      const rect = canvas.parentElement.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const width = Math.max(260, Math.floor(rect.width));
+      const height = Math.max(220, Math.floor(rect.height));
+
+      if (canvas.width !== Math.floor(width * dpr) || canvas.height !== Math.floor(height * dpr)) {
+        canvas.width = Math.floor(width * dpr);
+        canvas.height = Math.floor(height * dpr);
+      }
+
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+
+      if (!cfg || !cfg.daty || cfg.daty.length === 0) return;
+
+      const hasRightAxis = Boolean(cfg.seria2 && cfg.seria2.prawaOs);
+      const padLeft = 64;
+      const padRight = hasRightAxis ? 74 : 22;
+      const padTop = 16;
+      const padBottom = 56;
+      const plotW = Math.max(40, width - padLeft - padRight);
+      const plotH = Math.max(40, height - padTop - padBottom);
+
+      const n = cfg.daty.length;
+      const skalaLewa =
+        hasRightAxis || !cfg.seria2
+          ? obliczSkaleOsi(cfg.seria1.dane, cfg.liniaZero || !cfg.seria2)
+          : obliczSkaleOsi([...cfg.seria1.dane, ...cfg.seria2.dane], cfg.liniaZero);
+      const skalaPrawa = hasRightAxis ? obliczSkaleOsi(cfg.seria2.dane, true) : null;
+
+      const xDoPx = (i) => (n === 1 ? padLeft + plotW / 2 : padLeft + (i / (n - 1)) * plotW);
+      const yLewaDoPx = (v) =>
+        padTop + plotH - ((v - skalaLewa.min) / (skalaLewa.max - skalaLewa.min)) * plotH;
+      const yPrawaDoPx = (v) =>
+        padTop + plotH - ((v - skalaPrawa.min) / (skalaPrawa.max - skalaPrawa.min)) * plotH;
+
+      // Siatka pozioma i etykiety osi Y
+      const liczbaPodzialekY = 5;
+      ctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif';
+      ctx.textBaseline = "middle";
+
+      for (let i = 0; i <= liczbaPodzialekY; i++) {
+        const frac = i / liczbaPodzialekY;
+        const y = padTop + plotH - frac * plotH;
+        const valL = skalaLewa.min + frac * (skalaLewa.max - skalaLewa.min);
+
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.14)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 3]);
+        ctx.beginPath();
+        ctx.moveTo(padLeft, y);
+        ctx.lineTo(padLeft + plotW, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+        ctx.textAlign = "right";
+        ctx.fillText(valL.toFixed(!cfg.seria2 ? 0 : 1), padLeft - 8, y);
+
+        if (hasRightAxis && skalaPrawa) {
+          const valR = skalaPrawa.min + frac * (skalaPrawa.max - skalaPrawa.min);
+          ctx.fillStyle = cfg.seria2.kolor;
+          ctx.textAlign = "left";
+          ctx.fillText(
+            valR >= 1e6 ? valR.toExponential(1) : valR.toFixed(0),
+            padLeft + plotW + 8,
+            y
+          );
+        }
+      }
+
+      // Siatka pionowa i etykiety osi X
+      const liczbaPodzialekX = Math.min(6, Math.max(2, n));
+      ctx.textBaseline = "top";
+      ctx.textAlign = "center";
+      for (let k = 0; k < liczbaPodzialekX; k++) {
+        const idx =
+          liczbaPodzialekX === 1 ? 0 : Math.round((k / (liczbaPodzialekX - 1)) * (n - 1));
+        const x = xDoPx(idx);
+
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.14)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 3]);
+        ctx.beginPath();
+        ctx.moveTo(x, padTop);
+        ctx.lineTo(x, padTop + plotH);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        const etykieta = cfg.daty[idx] || "";
+        const [dzien, godz] = etykieta.split(" ");
+        ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+        ctx.fillText(dzien || etykieta, x, padTop + plotH + 6);
+        if (godz) {
+          ctx.fillStyle = "rgba(255, 255, 255, 0.58)";
+          ctx.fillText(godz, x, padTop + plotH + 19);
+        }
+      }
+
+      // Ramka obszaru wykresu
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(padLeft, padTop, plotW, plotH);
+
+      // Opis osi X (Czas + strefa czasowa UTC)
+      if (cfg.osXEtykieta) {
+        ctx.save();
+        ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+        ctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif';
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        ctx.fillText(cfg.osXEtykieta, padLeft + plotW / 2, padTop + plotH + 37);
+        ctx.restore();
+      }
+
+      // Opisy osi Y
+      ctx.save();
+      ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+      ctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif';
+      ctx.textAlign = "center";
+      ctx.translate(15, padTop + plotH / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText(cfg.osYLewaEtykieta, 0, 0);
+      ctx.restore();
+
+      if (hasRightAxis && cfg.osYPrawaEtykieta) {
+        ctx.save();
+        ctx.fillStyle = cfg.seria2.kolor;
+        ctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif';
+        ctx.textAlign = "center";
+        ctx.translate(width - 13, padTop + plotH / 2);
+        ctx.rotate(Math.PI / 2);
+        ctx.fillText(cfg.osYPrawaEtykieta, 0, 0);
+        ctx.restore();
+      }
+
+      // Przycinanie rysowania linii do wnętrza ramki
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(padLeft, padTop, plotW, plotH);
+      ctx.clip();
+
+      // Zaznaczenie wybranego interwału energii na wykresach paneli (tylko dla poprawnego zakresu)
+      const chartStart = dateStartInput.value;
+      const chartEnd = dateEndInput.value;
+      const selStartVal = intervalStartInput.value;
+      const selEndVal = intervalEndInput.value;
+      const czyInterwalPoprawny =
+        Boolean(selStartVal) &&
+        Boolean(selEndVal) &&
+        selEndVal > selStartVal &&
+        (!chartStart || selStartVal >= chartStart) &&
+        (!chartEnd || selEndVal <= chartEnd);
+
+      if (czyWybranoWykresPanelu() && czyInterwalPoprawny && n > 1) {
+        const t0 = parsujDateDoMs(cfg.daty[0]);
+        const tEnd = parsujDateDoMs(cfg.daty[n - 1]);
+        const selStart = parsujDateDoMs(selStartVal);
+        const selEnd = parsujDateDoMs(selEndVal);
+
+        if (Number.isFinite(t0) && Number.isFinite(tEnd) && tEnd > t0 && selEnd >= t0 && selStart <= tEnd) {
+          const clampedStart = Math.max(t0, selStart);
+          const clampedEnd = Math.min(tEnd, selEnd);
+          const xSel1 = padLeft + ((clampedStart - t0) / (tEnd - t0)) * plotW;
+          const xSel2 = padLeft + ((clampedEnd - t0) / (tEnd - t0)) * plotW;
+
+          ctx.fillStyle = "rgba(56, 189, 248, 0.10)";
+          ctx.fillRect(xSel1, padTop, Math.max(1, xSel2 - xSel1), plotH);
+
+          ctx.strokeStyle = "rgba(56, 189, 248, 0.7)";
+          ctx.lineWidth = 1.2;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(xSel1, padTop);
+          ctx.lineTo(xSel1, padTop + plotH);
+          ctx.moveTo(xSel2, padTop);
+          ctx.lineTo(xSel2, padTop + plotH);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
+
+      // Wypełnienie obszaru (ponad górami lub > 0 W/m^2)
+      if (n > 1) {
+        ctx.fillStyle = cfg.wypelnienie.kolor;
+        ctx.beginPath();
+        for (let i = 0; i < n; i++) {
+          const x = xDoPx(i);
+          const yTop = yLewaDoPx(cfg.seria1.dane[i]);
+          if (i === 0) ctx.moveTo(x, yTop);
+          else ctx.lineTo(x, yTop);
+        }
+        for (let i = n - 1; i >= 0; i--) {
+          const x = xDoPx(i);
+          if (cfg.wypelnienie.tryb === "above_series2" && cfg.seria2) {
+            const yBot = yLewaDoPx(cfg.seria2.dane[i]);
+            ctx.lineTo(x, Math.max(yLewaDoPx(cfg.seria1.dane[i]), yBot));
+          } else {
+            ctx.lineTo(x, yLewaDoPx(0));
+          }
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Pozioma linia horyzontu matematycznego 0°
+      if (cfg.liniaZero && skalaLewa.min <= 0 && skalaLewa.max >= 0) {
+        const y0 = yLewaDoPx(0);
+        ctx.strokeStyle = "#38bdf8";
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(padLeft, y0);
+        ctx.lineTo(padLeft + plotW, y0);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Rysowanie serii 2 (góry)
+      if (cfg.seria2) {
+        ctx.strokeStyle = cfg.seria2.kolor;
+        ctx.lineWidth = 1.7;
+        ctx.beginPath();
+        for (let i = 0; i < n; i++) {
+          const x = xDoPx(i);
+          const y = hasRightAxis ? yPrawaDoPx(cfg.seria2.dane[i]) : yLewaDoPx(cfg.seria2.dane[i]);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+
+      // Rysowanie serii 1 (Słońce / Ziemia / Natężenie)
+      ctx.strokeStyle = cfg.seria1.kolor;
+      ctx.lineWidth = 2.0;
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const x = xDoPx(i);
+        const y = yLewaDoPx(cfg.seria1.dane[i]);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // Celownik dla punktu wskazanego kursorem
+      if (hoverIndex !== null && hoverIndex >= 0 && hoverIndex < n) {
+        const hx = xDoPx(hoverIndex);
+        const hy1 = yLewaDoPx(cfg.seria1.dane[hoverIndex]);
+
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(hx, padTop);
+        ctx.lineTo(hx, padTop + plotH);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = cfg.seria1.kolor;
+        ctx.beginPath();
+        ctx.arc(hx, hy1, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (cfg.seria2) {
+          const hy2 = hasRightAxis
+            ? yPrawaDoPx(cfg.seria2.dane[hoverIndex])
+            : yLewaDoPx(cfg.seria2.dane[hoverIndex]);
+          ctx.fillStyle = cfg.seria2.kolor;
+          ctx.beginPath();
+          ctx.arc(hx, hy2, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      ctx.restore();
+      cfg._geometria = { padLeft, plotW, n };
+    }
+
+    function podepnijInterakcjeCanvas(indeks) {
+      const canvas = document.getElementById(`chart-canvas-${indeks}`);
+      const tooltip = document.getElementById(`chart-tooltip-${indeks}`);
+
+      canvas.addEventListener("mousemove", (ev) => {
+        const cfg = stanWykresow[indeks];
+        if (!cfg || !cfg._geometria || cfg._geometria.n === 0) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const mx = ev.clientX - rect.left;
+        const { padLeft, plotW, n } = cfg._geometria;
+
+        if (mx < padLeft || mx > padLeft + plotW) {
+          tooltip.classList.add("hidden");
+          rysujCanvasWykresu(indeks, null);
+          return;
+        }
+
+        const idx =
+          n === 1 ? 0 : Math.max(0, Math.min(n - 1, Math.round(((mx - padLeft) / plotW) * (n - 1))));
+        rysujCanvasWykresu(indeks, idx);
+
+        const v1 = cfg.seria1.dane[idx];
+        const v1Txt =
+          cfg.seria1.jednostka === "°"
+            ? `${v1 >= 0 ? "+" : ""}${v1.toFixed(2)}°`
+            : `${v1.toFixed(2)} ${cfg.seria1.jednostka}`;
+
+        let seria2Html = "";
+        if (cfg.seria2) {
+          const v2 = cfg.seria2.dane[idx];
+          const v2Txt =
+            cfg.seria2.jednostka === "°"
+              ? `${v2 >= 0 ? "+" : ""}${v2.toFixed(2)}°`
+              : `${formatujLiczbe(v2, 1)} ${cfg.seria2.jednostka}`;
+          seria2Html = `<div style="color:${cfg.seria2.kolor}">${cfg.seria2.nazwa}: <strong>${v2Txt}</strong></div>`;
+        }
+
+        tooltip.innerHTML = `
+          <div><strong>${cfg.daty[idx]}</strong></div>
+          <div style="color:${cfg.seria1.kolor}">${cfg.seria1.nazwa}: <strong>${v1Txt}</strong></div>
+          ${seria2Html}
+        `;
+        tooltip.classList.remove("hidden");
+
+        const tipW = tooltip.offsetWidth;
+        const tipH = tooltip.offsetHeight;
+        let left = mx + 14;
+        if (left + tipW > rect.width - 6) {
+          left = Math.max(6, mx - tipW - 14);
+        }
+        const top = Math.max(8, Math.min(rect.height - tipH - 8, ev.clientY - rect.top - tipH / 2));
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${top}px`;
+      });
+
+      canvas.addEventListener("mouseleave", () => {
+        tooltip.classList.add("hidden");
+        rysujCanvasWykresu(indeks, null);
+      });
+    }
+
+    podepnijInterakcjeCanvas(1);
+    podepnijInterakcjeCanvas(2);
+
+    window.addEventListener("resize", () => {
+      if (stanWykresow[1]) rysujCanvasWykresu(1, null);
+      if (liczbaWykresow === 2 && stanWykresow[2]) rysujCanvasWykresu(2, null);
+    });
+
+    // --- Komunikacja z backendem Pythona i odświeżanie wykresów ---
+    let czyByloJuzGenerowane = false;
+    let timerDebounce = null;
+    let kontrolerZapytania = null;
+
+    function zaplanujOdswiezenie() {
+      if (!czyByloJuzGenerowane) return;
+      clearTimeout(timerDebounce);
+      timerDebounce = setTimeout(() => {
+        sprobujAutomatycznieOdswiezyc();
+      }, 450);
+    }
+
+    function sprobujAutomatycznieOdswiezyc() {
+      if (!czyByloJuzGenerowane) return;
+      const params = zbierzParametry(false);
+      if (params && !params.blad) {
+        generujWykresy(false);
+      }
+    }
+
+    async function generujWykresy(pokazBledyWalidacji = true) {
+      const params = zbierzParametry(pokazBledyWalidacji);
+      if (!params) return;
+
+      if (params.blad) {
+        plotStatus.textContent = params.blad;
+        plotStatus.classList.remove("hidden", "info");
+        return;
+      }
+
+      if (kontrolerZapytania) {
+        kontrolerZapytania.abort();
+      }
+      kontrolerZapytania = new AbortController();
+
+      generateBtn.disabled = true;
+      plotStatus.textContent =
+        liczbaWykresow === 1
+          ? "Obliczanie pozycji ciał niebieskich, topografii Księżyca i generowanie wykresu..."
+          : "Obliczanie pozycji ciał niebieskich, topografii Księżyca i generowanie wykresów...";
+      plotStatus.classList.remove("hidden");
+      plotStatus.classList.add("info");
+
+      try {
+        const resp = await fetch("/api/wykresy", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(params),
+          signal: kontrolerZapytania.signal,
+        });
+
+        if (!resp.ok) {
+          let komunikat = `Błąd serwera (${resp.status})`;
+          try {
+            const errJson = await resp.json();
+            if (errJson.error) komunikat = errJson.error;
+          } catch {}
+          throw new Error(komunikat);
+        }
+
+        const wynik = await resp.json();
+        if (wynik.error) {
+          throw new Error(wynik.error);
+        }
+
+        czyByloJuzGenerowane = true;
+        plotStatus.classList.add("hidden");
+        plotStatus.classList.remove("info");
+
+        if (METRYKI_PANELI.has(params.metric)) {
+          danePaneliDoInterwalu.metric = params.metric;
+          danePaneliDoInterwalu.miejsce1 = {
+            datyMs: wynik.miejsce1.daty.map(parsujDateDoMs),
+            energiaJ: wynik.miejsce1.energia_skumulowana_j_m2 || [],
+          };
+          danePaneliDoInterwalu.miejsce2 =
+            liczbaWykresow === 2 && wynik.miejsce2
+              ? {
+                  datyMs: wynik.miejsce2.daty.map(parsujDateDoMs),
+                  energiaJ: wynik.miejsce2.energia_skumulowana_j_m2 || [],
+                }
+              : null;
+
+          aktualizujOgraniczeniaInterwalu();
+          if (!czyInterwalZmienionyRecznie) {
+            intervalStartInput.value = dateStartInput.value;
+            intervalEndInput.value = dateEndInput.value;
+          }
+          zaktualizujWidocznoscSekcjiInterwalu();
+          przeliczEnergieWInterwale();
+        } else {
+          danePaneliDoInterwalu.metric = null;
+          danePaneliDoInterwalu.miejsce1 = null;
+          danePaneliDoInterwalu.miejsce2 = null;
+          zaktualizujWidocznoscSekcjiInterwalu();
+        }
+
+        aktualizujKarteWykresu(1, params.metric, wynik.miejsce1);
+        if (liczbaWykresow === 2 && wynik.miejsce2) {
+          aktualizujKarteWykresu(2, params.metric, wynik.miejsce2);
+        } else {
+          stanWykresow[2] = null;
+        }
+      } catch (err) {
+        if (err.name === "AbortError") return;
+        const msg = err.message || String(err);
+        if (msg.includes("Failed to fetch") || msg.includes("404") || msg.includes("405") || msg.includes("501")) {
+          plotStatus.textContent =
+            "Brak połączenia z endpointem /api/wykresy. Uruchom 'python server.py' w folderze projektu i otwórz http://127.0.0.1:8000";
+        } else {
+          plotStatus.textContent = `Nie udało się wygenerować wykresów: ${msg}`;
+        }
+        plotStatus.classList.remove("hidden", "info");
+      } finally {
+        generateBtn.disabled = false;
+      }
+    }
+
+    generateBtn.addEventListener("click", () => generujWykresy(true));
+
+    document.addEventListener("DOMContentLoaded", () => {
+      zaladujStrefyCzasowe();
+      zaktualizujWidocznoscSekcjiInterwalu();
+    });
+  </script>
+</body>
+</html>
