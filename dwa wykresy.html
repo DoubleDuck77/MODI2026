@@ -24,7 +24,7 @@
       overflow-x: hidden;
     }
 
-    /* --- Siatka telemetryczna w tle (jak na stronie wzorcowej) --- */
+    /* --- Siatka telemetryczna w tle --- */
     body {
       background-image:
         linear-gradient(to right, rgba(255, 255, 255, 0.028) 1px, transparent 1px),
@@ -55,7 +55,7 @@
       font-family: inherit;
     }
 
-    /* --- Pogrubione narożniki HUD na ramkach (jak na stronie wzorcowej) --- */
+    /* --- Pogrubione narożniki HUD na ramkach --- */
     .hud-brackets {
       position: relative;
     }
@@ -774,7 +774,7 @@
       pointer-events: none;
     }
 
-    /* --- Minimalistyczna animacja ładowania: Słońce + Ziemia wokół Słońca + Księżyc wokół Ziemi --- */
+    /* --- Minimalistyczna animacja ładowania --- */
     .chart-loading-overlay {
       position: absolute;
       inset: 0;
@@ -1011,7 +1011,7 @@
   </style>
 </head>
 <body>
-  <!-- Rysunki techniczne w tle (Księżyc, Ziemia, trajektoria NRHO, rzut biegunowy) -->
+  <!-- Rysunki techniczne w tle -->
   <div class="space-backdrop" aria-hidden="true">
     <svg viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
       <defs>
@@ -1036,10 +1036,8 @@
         </radialGradient>
       </defs>
 
-      <!-- Pole gwiazd generowane z JS -->
       <g id="bg-starfield"></g>
 
-      <!-- Zakrzywiona sylwetka Księżyca z kraterami w lewym górnym rogu -->
       <g opacity="0.65">
         <circle cx="110" cy="210" r="392" fill="none" stroke="url(#terminatorRim)" stroke-width="1.2" />
         <circle cx="110" cy="210" r="390" fill="#05070b" />
@@ -1054,7 +1052,6 @@
         <path d="M 135 -180 A 390 390 0 0 1 500 210 L 500 600 L 145 600 C 185 380 180 120 135 -180 Z" fill="#030406" opacity="0.86" />
       </g>
 
-      <!-- Siatka orbitalna, elipsa NRHO i linia widoczności Ziemia - Księżyc -->
       <g stroke="rgba(255,255,255,0.055)" stroke-width="1" fill="none">
         <circle cx="110" cy="210" r="455" stroke-dasharray="3 6" />
         <ellipse cx="340" cy="240" rx="390" ry="130" transform="rotate(-16 340 240)" stroke="rgba(56,189,248,0.15)" stroke-dasharray="6 4" />
@@ -1063,7 +1060,6 @@
         <line x1="960" y1="0" x2="960" y2="1000" stroke-dasharray="2 10" />
       </g>
 
-      <!-- Sylwetka Ziemi -->
       <g transform="translate(960, 145)" opacity="0.65">
         <circle cx="0" cy="0" r="18" fill="url(#earthInSpace)" stroke="rgba(255,255,255,0.2)" stroke-width="0.7" />
         <path d="M -4 -17 A 18 18 0 0 1 9 16 A 14 18 0 0 0 -4 -17 Z" fill="#030406" opacity="0.88" />
@@ -1071,7 +1067,6 @@
         <text x="30" y="3" fill="rgba(148,163,184,0.32)" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="2">TERRA // LOS REF</text>
       </g>
 
-      <!-- Rzut stereograficzny bieguna po prawej stronie -->
       <g transform="translate(1430, 260)" stroke="rgba(255,255,255,0.05)" fill="none" stroke-width="1">
         <circle cx="0" cy="0" r="240" />
         <circle cx="0" cy="0" r="180" stroke-dasharray="4 6" />
@@ -1084,7 +1079,6 @@
         <text x="10" y="-186" fill="rgba(148,163,184,0.22)" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="2">85°S LAT RING</text>
       </g>
 
-      <!-- Izolinie topograficzne w lewym dolnym rogu -->
       <g transform="translate(150, 820)" stroke="rgba(255,255,255,0.045)" fill="none" stroke-width="1">
         <path d="M -200 -35 C -145 -170, 110 -190, 190 -55 C 245 45, 165 190, 18 200 C -125 208, -235 80, -200 -35 Z" />
         <path d="M -145 -22 C -100 -125, 80 -138, 140 -40 C 180 30, 120 138, 12 146 C -92 155, -172 58, -145 -22 Z" stroke-dasharray="5 5" />
@@ -1095,10 +1089,8 @@
   </div>
 
   <header class="top-panel">
-    <!-- 1. Główny tytuł na górze -->
     <h1 class="main-title">Oblicz położenie ciał niebieskich oraz ilość światła</h1>
 
-    <!-- 2. Pod tytułem, przed ramkami: wybierz wykres + niebieska i pomarańczowa ramka -->
     <div class="options-section">
       <p class="options-prompt">Wybierz wykres:</p>
 
@@ -1140,12 +1132,11 @@
       </div>
     </div>
 
-    <!-- 3. Połączona tabela: wybór strefy czasowej i wybór zakresu dat -->
     <table class="time-and-dates-table hud-brackets" aria-label="Strefa czasowa i zakres dat">
       <thead>
         <tr>
           <th scope="col">Strefa czasowa</th>
-          <th scope="col">Zakres dat symulacji</th>
+          <th scope="col">Zakres dat symulacji (01.01.2000 00:00 – 01.01.2100 00:00)</th>
         </tr>
       </thead>
       <tbody>
@@ -1192,6 +1183,8 @@
                     type="datetime-local"
                     id="date-start"
                     name="date_start"
+                    min="2000-01-01T00:00"
+                    max="2100-01-01T00:00"
                     step="60"
                   />
                 </div>
@@ -1202,6 +1195,8 @@
                     type="datetime-local"
                     id="date-end"
                     name="date_end"
+                    min="2000-01-01T00:00"
+                    max="2100-01-01T00:00"
                     step="60"
                   />
                 </div>
@@ -1214,14 +1209,12 @@
       </tbody>
     </table>
 
-    <!-- 4. Przycisk generowania i status obliczeń -->
     <div class="actions-bar">
       <button type="button" id="generate-btn" class="generate-btn">Generuj wykresy</button>
       <div id="plot-status" class="status-msg hidden"></div>
     </div>
   </header>
 
-  <!-- Przełącznik liczby wykresów (1 lub 2) przed sekcją wykresów i wyborem miejsca -->
   <div class="chart-count-bar">
     <span class="chart-count-label" id="chart-count-label">Liczba wykresów:</span>
     <div class="segmented-switch" role="group" aria-labelledby="chart-count-label">
@@ -1234,7 +1227,6 @@
     </div>
   </div>
 
-  <!-- 5. Sekcja z wykresami oraz współrzędnymi wewnątrz odpowiadających im boxów -->
   <main class="charts-section" id="charts-section" aria-label="Wykresy dla wybranych lokalizacji">
     <article class="chart-card hud-brackets" id="chart-card-1">
       <section class="place-section">
@@ -1331,7 +1323,6 @@
     </article>
   </main>
 
-  <!-- 6. Sekcja wyboru interwału i obliczenia zebranej energii (tylko dla wykresów paneli) -->
   <section class="interval-energy-section hidden" id="panel-interval-section" aria-label="Energia zebrana w wybranym interwale">
     <div class="interval-energy-card hud-brackets">
       <h3 class="interval-energy-title" id="interval-energy-title">
@@ -1345,6 +1336,8 @@
             type="datetime-local"
             id="interval-start"
             name="interval_start"
+            min="2000-01-01T00:00"
+            max="2100-01-01T00:00"
             step="60"
           />
         </div>
@@ -1355,6 +1348,8 @@
             type="datetime-local"
             id="interval-end"
             name="interval_end"
+            min="2000-01-01T00:00"
+            max="2100-01-01T00:00"
             step="60"
           />
         </div>
@@ -1402,6 +1397,63 @@
     })();
 
     const METRYKI_PANELI = new Set(["panel_parallel", "panel_perpendicular", "panel_tracking"]);
+
+    // --- Dopuszczalny zakres danych: od 1 stycznia 2000 00:00 do 1 stycznia 2100 00:00 ---
+    const MIN_DATA_STR = "2000-01-01T00:00";
+    const MAX_DATA_STR = "2100-01-01T00:00";
+    const MIN_DATA_MS = new Date(2000, 0, 1, 0, 0, 0, 0).getTime();
+    const MAX_DATA_MS = new Date(2100, 0, 1, 0, 0, 0, 0).getTime();
+    const KOMUNIKAT_POZA_ZAKRESEM_DAT =
+      "Wyszedłeś poza dozwolony zakres dat (01.01.2000 00:00 – 01.01.2100 00:00).";
+
+    function normalizujKomunikatBleduSerwera(rawMsg) {
+      const msg = String(rawMsg || "");
+      const czyBladZakresuDat =
+        /ephemeris|segment|covers|out of range|zakres|dat[ay]?|poza|wcześniejsz|późniejsz|1999|2000|2050|2053|2100|de4\d+|\.bsp|brak danych|brak pliku|nie znaleziono pliku/i.test(
+          msg
+        );
+      if (czyBladZakresuDat) {
+        return `${KOMUNIKAT_POZA_ZAKRESEM_DAT} Wybierz daty mieszczące się w dozwolonym przedziale.`;
+      }
+      return msg;
+    }
+
+    function parsujDateDoMs(str) {
+      if (!str) return NaN;
+      const m = str.trim().match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+      if (m) {
+        return new Date(
+          Number(m[1]),
+          Number(m[2]) - 1,
+          Number(m[3]),
+          Number(m[4]),
+          Number(m[5]),
+          m[6] ? Number(m[6]) : 0,
+          0
+        ).getTime();
+      }
+      return Date.parse(str.trim().replace(" ", "T"));
+    }
+
+    function ocenaGranicDatyInput(inputEl) {
+      if (!inputEl) return { status: "ok" };
+      const val = inputEl.value;
+      if (!val) {
+        if (inputEl.validity && inputEl.validity.badInput) return { status: "niepoprawna" };
+        return { status: "pusta" };
+      }
+
+      const ms = parsujDateDoMs(val);
+      if (Number.isFinite(ms)) {
+        if (ms < MIN_DATA_MS) return { status: "za_wczesnie" };
+        if (ms > MAX_DATA_MS) return { status: "za_pozno" };
+        return { status: "ok" };
+      }
+
+      if (val < MIN_DATA_STR) return { status: "za_wczesnie" };
+      if (val > MAX_DATA_STR) return { status: "za_pozno" };
+      return { status: "ok" };
+    }
 
     // --- Stan liczby wykresów (1 lub 2) ---
     let liczbaWykresow = 2;
@@ -1471,13 +1523,11 @@
         }
       }
 
-      // Przerysowanie istniejących wykresów po zmianie szerokości kolumn
       requestAnimationFrame(() => {
         if (stanWykresow[1]) rysujCanvasWykresu(1, null);
         if (!czyJeden && stanWykresow[2]) rysujCanvasWykresu(2, null);
       });
 
-      // Przy przełączeniu na 2 wykresy: jeśli wcześniej wygenerowano dane, dociągnij 2. miejsce (jeśli podano współrzędne)
       if (!czyJeden && czyByloJuzGenerowane) {
         const params = zbierzParametry(false);
         if (params && !params.blad) {
@@ -1496,9 +1546,7 @@
           if (typeof dtInput.showPicker === "function") {
             dtInput.showPicker();
           }
-        } catch {
-          // Ignoruj, jeśli przeglądarka zablokowała wywołanie lub picker jest już otwarty
-        }
+        } catch {}
       });
     });
 
@@ -1833,30 +1881,22 @@
       sprobujAutomatycznieOdswiezyc();
     });
 
-    // --- Zakres dat nad wykresami (zakaz identycznych dat oraz końca przed początkiem) ---
+    // --- Zakres dat nad wykresami (01.01.2000 00:00 – 01.01.2100 00:00) ---
     const dateStartInput = document.getElementById("date-start");
     const dateEndInput = document.getElementById("date-end");
     const dateStatus = document.getElementById("date-status");
 
     function aktualizujOgraniczeniaInterwalu() {
-      const startVal = dateStartInput.value;
-      const endVal = dateEndInput.value;
+      const startOcena = ocenaGranicDatyInput(dateStartInput);
+      const endOcena = ocenaGranicDatyInput(dateEndInput);
 
-      if (startVal) {
-        intervalStartInput.min = startVal;
-        intervalEndInput.min = startVal;
-      } else {
-        intervalStartInput.removeAttribute("min");
-        intervalEndInput.removeAttribute("min");
-      }
+      const minLimit = startOcena.status === "ok" ? dateStartInput.value : MIN_DATA_STR;
+      const maxLimit = endOcena.status === "ok" ? dateEndInput.value : MAX_DATA_STR;
 
-      if (endVal) {
-        intervalStartInput.max = endVal;
-        intervalEndInput.max = endVal;
-      } else {
-        intervalStartInput.removeAttribute("max");
-        intervalEndInput.removeAttribute("max");
-      }
+      intervalStartInput.min = minLimit;
+      intervalEndInput.min = minLimit;
+      intervalStartInput.max = maxLimit;
+      intervalEndInput.max = maxLimit;
     }
 
     function sprawdzZakresDat(wymagajWypelnienia = false) {
@@ -1866,11 +1906,43 @@
       dateStartInput.classList.remove("input-error");
       dateEndInput.classList.remove("input-error");
 
-      if (startVal && endVal && endVal <= startVal) {
+      const ocenaStart = ocenaGranicDatyInput(dateStartInput);
+      const ocenaEnd = ocenaGranicDatyInput(dateEndInput);
+      const bledyGranic = [];
+
+      if (ocenaStart.status === "za_wczesnie") {
+        dateStartInput.classList.add("input-error");
+        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Data początkowa jest za wczesna.`);
+      } else if (ocenaStart.status === "za_pozno") {
+        dateStartInput.classList.add("input-error");
+        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Data początkowa jest za późna.`);
+      } else if (ocenaStart.status === "niepoprawna") {
+        dateStartInput.classList.add("input-error");
+        bledyGranic.push("Data początkowa jest niepełna lub niepoprawna.");
+      }
+
+      if (ocenaEnd.status === "za_wczesnie") {
+        dateEndInput.classList.add("input-error");
+        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Data końcowa jest za wczesna.`);
+      } else if (ocenaEnd.status === "za_pozno") {
+        dateEndInput.classList.add("input-error");
+        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Data końcowa jest za późna.`);
+      } else if (ocenaEnd.status === "niepoprawna") {
+        dateEndInput.classList.add("input-error");
+        bledyGranic.push("Data końcowa jest niepełna lub niepoprawna.");
+      }
+
+      if (bledyGranic.length > 0) {
+        dateStatus.textContent = bledyGranic.join(" ");
+        dateStatus.classList.remove("hidden");
+        return false;
+      }
+
+      if (startVal && endVal && parsujDateDoMs(endVal) <= parsujDateDoMs(startVal)) {
         dateStartInput.classList.add("input-error");
         dateEndInput.classList.add("input-error");
         dateStatus.textContent =
-          endVal === startVal
+          parsujDateDoMs(endVal) === parsujDateDoMs(startVal)
             ? "Błąd zakresu dat: data początkowa i data końcowa nie mogą być identyczne."
             : "Błąd zakresu dat: data końcowa nie może być wcześniejsza niż data początkowa.";
         dateStatus.classList.remove("hidden");
@@ -1880,7 +1952,7 @@
       if (wymagajWypelnienia && (!startVal || !endVal)) {
         if (!startVal) dateStartInput.classList.add("input-error");
         if (!endVal) dateEndInput.classList.add("input-error");
-        dateStatus.textContent = "Wybierz zarówno datę początkową, jak i datę końcową.";
+        dateStatus.textContent = "Wybierz zarówno datę początkową, jak i datę końcową (w zakresie 01.01.2000 00:00 – 01.01.2100 00:00).";
         dateStatus.classList.remove("hidden");
         return false;
       }
@@ -1889,11 +1961,11 @@
       return true;
     }
 
-    ["input", "change"].forEach((evtName) => {
+    ["input", "change", "blur"].forEach((evtName) => {
       dateStartInput.addEventListener(evtName, () => {
         sprawdzZakresDat(false);
         aktualizujOgraniczeniaInterwalu();
-        if (!czyInterwalZmienionyRecznie) {
+        if (!czyInterwalZmienionyRecznie && ocenaGranicDatyInput(dateStartInput).status === "ok") {
           intervalStartInput.value = dateStartInput.value;
         }
         if (czyWybranoWykresPanelu()) {
@@ -1905,7 +1977,7 @@
       dateEndInput.addEventListener(evtName, () => {
         sprawdzZakresDat(false);
         aktualizujOgraniczeniaInterwalu();
-        if (!czyInterwalZmienionyRecznie) {
+        if (!czyInterwalZmienionyRecznie && ocenaGranicDatyInput(dateEndInput).status === "ok") {
           intervalEndInput.value = dateEndInput.value;
         }
         if (czyWybranoWykresPanelu()) {
@@ -2014,12 +2086,6 @@
     let czyInterwalZmienionyRecznie = false;
     let kontrolerZapytaniaInterwalu = null;
 
-    function parsujDateDoMs(str) {
-      if (!str) return NaN;
-      const norm = str.trim().replace(" ", "T");
-      return Date.parse(norm);
-    }
-
     function formatujEnergiaTekst(energiaJ) {
       if (!Number.isFinite(energiaJ)) return "—";
       const jZaokraglone = Math.max(0, energiaJ);
@@ -2064,11 +2130,44 @@
       intervalStartInput.classList.remove("input-error");
       intervalEndInput.classList.remove("input-error");
 
-      // 1. Sprawdzenie czy interwał nie wykracza poza zadany zakres wykresów
+      const ocenaStart = ocenaGranicDatyInput(intervalStartInput);
+      const ocenaEnd = ocenaGranicDatyInput(intervalEndInput);
+      const bledyGranic = [];
+
+      if (ocenaStart.status === "za_wczesnie") {
+        intervalStartInput.classList.add("input-error");
+        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Data początkowa interwału jest za wczesna.`);
+      } else if (ocenaStart.status === "za_pozno") {
+        intervalStartInput.classList.add("input-error");
+        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Data początkowa interwału jest za późna.`);
+      } else if (ocenaStart.status === "niepoprawna") {
+        intervalStartInput.classList.add("input-error");
+        bledyGranic.push("Data początkowa interwału jest niepełna lub niepoprawna.");
+      }
+
+      if (ocenaEnd.status === "za_wczesnie") {
+        intervalEndInput.classList.add("input-error");
+        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Data końcowa interwału jest za wczesna.`);
+      } else if (ocenaEnd.status === "za_pozno") {
+        intervalEndInput.classList.add("input-error");
+        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Data końcowa interwału jest za późna.`);
+      } else if (ocenaEnd.status === "niepoprawna") {
+        intervalEndInput.classList.add("input-error");
+        bledyGranic.push("Data końcowa interwału jest niepełna lub niepoprawna.");
+      }
+
+      if (bledyGranic.length > 0) {
+        intervalStatus.textContent = bledyGranic.join(" ");
+        intervalStatus.classList.remove("hidden", "info");
+        intervalEnergy1El.textContent = "—";
+        intervalEnergy2El.textContent = "—";
+        return false;
+      }
+
       const startPozaZakresem =
-        Boolean(startVal) && ((Boolean(chartStart) && startVal < chartStart) || (Boolean(chartEnd) && startVal > chartEnd));
+        Boolean(startVal) && ((Boolean(chartStart) && parsujDateDoMs(startVal) < parsujDateDoMs(chartStart)) || (Boolean(chartEnd) && parsujDateDoMs(startVal) > parsujDateDoMs(chartEnd)));
       const endPozaZakresem =
-        Boolean(endVal) && ((Boolean(chartStart) && endVal < chartStart) || (Boolean(chartEnd) && endVal > chartEnd));
+        Boolean(endVal) && ((Boolean(chartStart) && parsujDateDoMs(endVal) < parsujDateDoMs(chartStart)) || (Boolean(chartEnd) && parsujDateDoMs(endVal) > parsujDateDoMs(chartEnd)));
 
       if (startPozaZakresem || endPozaZakresem) {
         if (startPozaZakresem) intervalStartInput.classList.add("input-error");
@@ -2078,19 +2177,18 @@
           chartStart && chartEnd
             ? ` (${chartStart.replace("T", " ")} – ${chartEnd.replace("T", " ")})`
             : "";
-        intervalStatus.textContent = `Błąd interwału: zakres dat do obliczenia zebranej energii nie może wykraczać poza zadany zakres wykresów${zakresTekst}.`;
+        intervalStatus.textContent = `Wyszedłeś poza dozwolony zakres dat wykresu: interwał do obliczenia zebranej energii nie może wykraczać poza zakres${zakresTekst}.`;
         intervalStatus.classList.remove("hidden", "info");
         intervalEnergy1El.textContent = "—";
         intervalEnergy2El.textContent = "—";
         return false;
       }
 
-      // 2. Sprawdzenie czy daty interwału nie są identyczne i czy koniec nie jest przed początkiem
-      if (startVal && endVal && endVal <= startVal) {
+      if (startVal && endVal && parsujDateDoMs(endVal) <= parsujDateDoMs(startVal)) {
         intervalStartInput.classList.add("input-error");
         intervalEndInput.classList.add("input-error");
         intervalStatus.textContent =
-          endVal === startVal
+          parsujDateDoMs(endVal) === parsujDateDoMs(startVal)
             ? "Błąd interwału: data początkowa i data końcowa interwału nie mogą być identyczne."
             : "Błąd interwału: data końcowa nie może być wcześniejsza niż data początkowa.";
         intervalStatus.classList.remove("hidden", "info");
@@ -2227,19 +2325,22 @@
         if (liczbaWykresow === 2 && stanWykresow[2]) rysujCanvasWykresu(2, null);
       } catch (err) {
         if (err.name === "AbortError") return;
-        intervalStatus.textContent = `Nie udało się obliczyć energii w interwale: ${err.message || err}`;
+        const msg = normalizujKomunikatBleduSerwera(err.message || err);
+        intervalStatus.textContent = msg.startsWith("Wyszedłeś poza")
+          ? msg
+          : `Nie udało się obliczyć energii w interwale: ${msg}`;
         intervalStatus.classList.remove("hidden", "info");
       }
     }
 
-    ["input", "change"].forEach((evtName) => {
+    ["input", "change", "blur"].forEach((evtName) => {
       intervalStartInput.addEventListener(evtName, () => {
-        czyInterwalZmienionyRecznie = true;
+        if (evtName !== "blur") czyInterwalZmienionyRecznie = true;
         przeliczEnergieWInterwale();
       });
 
       intervalEndInput.addEventListener(evtName, () => {
-        czyInterwalZmienionyRecznie = true;
+        if (evtName !== "blur") czyInterwalZmienionyRecznie = true;
         przeliczEnergieWInterwale();
       });
     });
@@ -2562,7 +2663,7 @@
       }
 
       // Siatka pionowa i etykiety osi X
-      const liczbaPodzialekX = Math.min(6, Math.max(2, n));
+      const liczbaPodzialekX = Math.min(6, Math.max(1, n));
       ctx.textBaseline = "top";
       ctx.textAlign = "center";
       for (let k = 0; k < liczbaPodzialekX; k++) {
@@ -2594,7 +2695,6 @@
       ctx.lineWidth = 1;
       ctx.strokeRect(padLeft, padTop, plotW, plotH);
 
-      // Opis osi X (Czas + strefa czasowa UTC)
       if (cfg.osXEtykieta) {
         ctx.save();
         ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
@@ -2605,7 +2705,6 @@
         ctx.restore();
       }
 
-      // Opisy osi Y
       ctx.save();
       ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
       ctx.font = '11px "JetBrains Mono", "Space Mono", monospace';
@@ -2626,23 +2725,22 @@
         ctx.restore();
       }
 
-      // Przycinanie rysowania linii do wnętrza ramki
       ctx.save();
       ctx.beginPath();
       ctx.rect(padLeft, padTop, plotW, plotH);
       ctx.clip();
 
-      // Zaznaczenie wybranego interwału energii na wykresach paneli (tylko dla poprawnego zakresu)
+      // Zaznaczenie wybranego interwału energii na wykresach paneli
       const chartStart = dateStartInput.value;
       const chartEnd = dateEndInput.value;
       const selStartVal = intervalStartInput.value;
       const selEndVal = intervalEndInput.value;
       const czyInterwalPoprawny =
-        Boolean(selStartVal) &&
-        Boolean(selEndVal) &&
-        selEndVal > selStartVal &&
-        (!chartStart || selStartVal >= chartStart) &&
-        (!chartEnd || selEndVal <= chartEnd);
+        ocenaGranicDatyInput(intervalStartInput).status === "ok" &&
+        ocenaGranicDatyInput(intervalEndInput).status === "ok" &&
+        parsujDateDoMs(selEndVal) > parsujDateDoMs(selStartVal) &&
+        (!chartStart || parsujDateDoMs(selStartVal) >= parsujDateDoMs(chartStart)) &&
+        (!chartEnd || parsujDateDoMs(selEndVal) <= parsujDateDoMs(chartEnd));
 
       if (czyWybranoWykresPanelu() && czyInterwalPoprawny && n > 1) {
         const t0 = parsujDateDoMs(cfg.daty[0]);
@@ -2672,7 +2770,7 @@
         }
       }
 
-      // Wypełnienie obszaru (ponad górami lub > 0 W/m^2)
+      // Wypełnienie obszaru
       if (n > 1) {
         ctx.fillStyle = cfg.wypelnienie.kolor;
         ctx.beginPath();
@@ -2720,6 +2818,13 @@
           else ctx.lineTo(x, y);
         }
         ctx.stroke();
+
+        if (n === 1) {
+          ctx.fillStyle = cfg.seria2.kolor;
+          ctx.beginPath();
+          ctx.arc(xDoPx(0), hasRightAxis ? yPrawaDoPx(cfg.seria2.dane[0]) : yLewaDoPx(cfg.seria2.dane[0]), 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
 
       // Rysowanie serii 1 (Słońce / Ziemia / Natężenie)
@@ -2733,6 +2838,13 @@
         else ctx.lineTo(x, y);
       }
       ctx.stroke();
+
+      if (n === 1) {
+        ctx.fillStyle = cfg.seria1.kolor;
+        ctx.beginPath();
+        ctx.arc(xDoPx(0), yLewaDoPx(cfg.seria1.dane[0]), 4.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       // Celownik dla punktu wskazanego kursorem
       if (hoverIndex !== null && hoverIndex >= 0 && hoverIndex < n) {
@@ -2906,6 +3018,12 @@
           throw new Error(wynik.error);
         }
 
+        if (!wynik.miejsce1 || !Array.isArray(wynik.miejsce1.daty) || wynik.miejsce1.daty.length === 0) {
+          throw new Error(
+            `${KOMUNIKAT_POZA_ZAKRESEM_DAT} Dla wybranej strefy czasowej podany przedział wykracza poza dostępne dane.`
+          );
+        }
+
         czyByloJuzGenerowane = true;
         plotStatus.classList.add("hidden");
         plotStatus.classList.remove("info");
@@ -2946,10 +3064,12 @@
         }
       } catch (err) {
         if (err.name === "AbortError") return;
-        const msg = err.message || String(err);
+        const msg = normalizujKomunikatBleduSerwera(err.message || String(err));
         if (msg.includes("Failed to fetch") || msg.includes("404") || msg.includes("405") || msg.includes("501")) {
           plotStatus.textContent =
             "Brak połączenia z endpointem /api/wykresy. Uruchom 'python server.py' w folderze projektu i otwórz http://127.0.0.1:8000";
+        } else if (msg.startsWith("Wyszedłeś poza")) {
+          plotStatus.textContent = msg;
         } else {
           plotStatus.textContent = `Nie udało się wygenerować wykresów: ${msg}`;
         }
