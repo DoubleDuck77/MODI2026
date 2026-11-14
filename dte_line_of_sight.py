@@ -344,3 +344,188 @@ def load_horizon_csv(path: Path) -> Tuple[np.ndarray, np.ndarray]:
 def horizon_at(az_tab: np.ndarray, alt_tab: np.ndarray, az_deg) -> np.ndarray:
     """Elewacja horyzontu [deg] w azymutach ``az_deg`` (interpolacja okresowa przez 0°/360°)."""
     return np.interp(np.asarray(az_deg, dtype=np.float64) % 360.0, az_tab, alt_tab, period=360.0)
+
+
+# --------------------------- WIDOCZNOŚĆ (DTE) ---------------------------
+
+
+def disk_fraction(clearance_deg: float, radius_deg: float) -> float:
+    """Ułamek tarczy Ziemi nad horyzontem (horyzont lokalnie płaski na szerokości tarczy)."""
+    if radius_deg <= 0.0:
+        return 1.0 if clearance_deg > 0.0 else 0.0
+    x = max(-1.0, min(1.0, clearance_deg / radius_deg))
+    return 1.0 - (math.acos(x) - x * math.sqrt(1.0 - x * x)) / math.pi
+
+
+def _iso(t: datetime) -> str:
+    return t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _horizon_source(lat_deg: float, lon_deg: float, antenna_height_m: float,
+                    horizon_csv: Optional[Path]):
+    """(ścieżka CSV, grunt [m] albo None, azymuty, elewacje). Bez ``horizon_csv`` generuje plik jak klawisz C."""
+    if horizon_csv is None:
+        path, ground_m = generate_horizon_csv(lat_deg, lon_deg, antenna_height_m)
+    else:
+        path, ground_m = Path(horizon_csv), None
+    az_tab, alt_tab = load_horizon_csv(path)
+    return path, ground_m, az_tab, alt_tab
+
+
+def _evaluate(times: Sequence[datetime], lat_deg: float, lon_deg: float, antenna_height_m: float,
+              min_elevation_deg: float, horizon_csv: Optional[Path], eph: Optional[Ephemeris]) -> dict:
+    """Wszystkie wielkości DTE dla N chwil (wektorowo), już zaokrąglone i spójne ze sobą."""
+    _check_observer(lat_deg, lon_deg, antenna_height_m)
+    if not math.isfinite(min_elevation_deg):
+        raise ValueError("min_elevation_deg musi być liczbą skończoną")
+    eph = eph or Ephemeris()
+    path, ground_m, az_tab, alt_tab = _horizon_source(lat_deg, lon_deg, antenna_height_m, horizon_csv)
+
+    lat, lon = math.radians(lat_deg), math.radians(lon_deg)
+    up = np.array([math.cos(lat) * math.cos(lon), math.cos(lat) * math.sin(lon), math.sin(lat)])
+    east = np.array([-math.sin(lon), math.cos(lon), 0.0])
+    north = np.cross(up, east)
+    r_obs = R_MOON_KM + ((ground_m or 0.0) + antenna_height_m) / 1000.0
+
+    earth = earth_in_moon_frame_km(eph, times)                  # środek Księżyca → Ziemia
+    v = earth - r_obs * up                                        # obserwator → Ziemia
+    dist = np.linalg.norm(v, axis=1)
+    alt = np.degrees(np.arcsin(np.clip((v @ up) / dist, -1.0, 1.0)))
+    az = np.degrees(np.arctan2(v @ east, v @ north)) % 360.0
+    rho = np.degrees(np.arcsin(R_EARTH_KM / dist))
+    hor = horizon_at(az_tab, alt_tab, az)
+    e_norm = np.linalg.norm(earth, axis=1)
+
+    alt_r, hor_r = np.round(alt, 4), np.round(hor, 4)
+    clearance = np.round(alt_r - hor_r, 4)
+    fraction = np.array([round(disk_fraction(c, r), 4) for c, r in zip(clearance, rho)])
+    return {
+        "path": path,
+        "ground_m": ground_m,
+        "alt": alt_r,
+        "az": np.round(az, 4) % 360.0,
+        "dist": np.round(dist, 1),
+        "rho": np.round(rho, 4),
+        "lib_lat": np.round(np.degrees(np.arcsin(earth[:, 2] / e_norm)), 4),
+        "lib_lon": np.round(np.degrees(np.arctan2(earth[:, 1], earth[:, 0])), 4),
+        "hor": hor_r,
+        "clearance": clearance,
+        "fraction": fraction,
+        "contact": clearance > min_elevation_deg,
+    }
+
+
+def dte_point(t: datetime, lat_deg: float, lon_deg: float, *, antenna_height_m: float = 2.0,
+              min_elevation_deg: float = 0.0, horizon_csv: Optional[Path] = None,
+              eph: Optional[Ephemeris] = None) -> dict:
+    """Czy w chwili ``t`` jest kontakt DTE z Ziemią (pola jak w kontrakcie ``LineOfSight`` + dodatki)."""
+    t = _to_utc(t)
+    r = _evaluate([t], lat_deg, lon_deg, antenna_height_m, min_elevation_deg, horizon_csv, eph)
+    fraction = float(r["fraction"][0])
+    return {
+        "t": _iso(t),
+        "observer": {"lat_deg": float(lat_deg), "lon_deg": float(lon_deg)},
+        "observer_elevation_m": None if r["ground_m"] is None else round(r["ground_m"], 1),
+        "antenna_height_m": float(antenna_height_m),
+        "earth": {"alt_deg": float(r["alt"][0]), "az_deg": float(r["az"][0]),
+                  "distance_km": float(r["dist"][0])},
+        "earth_angular_radius_deg": float(r["rho"][0]),
+        "libration": {"lat_deg": float(r["lib_lat"][0]), "lon_deg": float(r["lib_lon"][0])},
+        "horizon_elevation_deg": float(r["hor"][0]),
+        "clearance_deg": float(r["clearance"][0]),
+        "visible_disk_fraction": fraction,
+        "earth_visible": fraction > 0.0,
+        "min_elevation_deg": float(min_elevation_deg),
+        "dte_contact": bool(r["contact"][0]),
+        "horizon_csv": str(r["path"]),
+    }
+
+
+def dte_windows(start: datetime, end: datetime, lat_deg: float, lon_deg: float, *, step_hours: int = 1,
+                antenna_height_m: float = 2.0, min_elevation_deg: float = 0.0,
+                horizon_csv: Optional[Path] = None, eph: Optional[Ephemeris] = None) -> dict:
+    """Okna kontaktu DTE w ``[start, end]`` próbkowane co ``step_hours`` (jak kontrakt ``VisibilityWindows``)."""
+    start, end = _to_utc(start), _to_utc(end)
+    if isinstance(step_hours, bool) or not isinstance(step_hours, int) or step_hours < 1:
+        raise ValueError(f"step_hours={step_hours!r} musi być liczbą całkowitą >= 1")
+    if start >= end:
+        raise ValueError("start musi być wcześniejszy niż end")
+    step = timedelta(hours=step_hours)
+    times = [start + k * step for k in range((end - start) // step + 1)]
+    r = _evaluate(times, lat_deg, lon_deg, antenna_height_m, min_elevation_deg, horizon_csv, eph)
+
+    windows, total = [], timedelta(0)
+    contact, i = r["contact"], 0
+    while i < len(times):
+        if not contact[i]:
+            i += 1
+            continue
+        j = i
+        while j + 1 < len(times) and contact[j + 1]:
+            j += 1
+        w_start, w_end = times[i], min(times[j] + step, end)
+        if w_end > w_start:
+            windows.append({"start": _iso(w_start), "end": _iso(w_end),
+                            "max_clearance_deg": float(r["clearance"][i:j + 1].max())})
+            total += w_end - w_start
+        i = j + 1
+
+    return {
+        "observer": {"lat_deg": float(lat_deg), "lon_deg": float(lon_deg)},
+        "start": _iso(start),
+        "end": _iso(end),
+        "step_hours": step_hours,
+        "min_elevation_deg": float(min_elevation_deg),
+        "horizon_csv": str(r["path"]),
+        "samples": len(times),
+        "windows": windows,
+        "visible_fraction": round(total / (end - start), 4),
+    }
+
+
+# --------------------------- CLI ---------------------------
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    import argparse
+    import json
+
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--lat", type=float, required=True, help="szerokość selenograficzna [deg]")
+    common.add_argument("--lon", type=float, required=True, help="długość selenograficzna, E dodatnia [deg]")
+    common.add_argument("--antenna-height-m", type=float, default=2.0,
+                        help="wysokość anteny nad gruntem [m] (domyślnie 2, jak suwak w newlunar)")
+    common.add_argument("--min-elevation-deg", type=float, default=0.0,
+                        help="minimalny zapas środka Ziemi nad horyzontem terenowym [deg]")
+    common.add_argument("--horizon-csv", type=Path, default=None,
+                        help="gotowy horizon.csv z klawisza C w newlunar.py zamiast generowania")
+
+    parser = argparse.ArgumentParser(
+        description="DTE: kontakt Księżyc–Ziemia z uwzględnieniem terenu (horyzont jak klawisz C "
+                    "w newlunar.py) i libracji (model IAU). Wynik: JSON na stdout.")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    p_point = sub.add_parser("point", parents=[common], help="kontakt w jednej chwili")
+    p_point.add_argument("--t", required=True, help="czas UTC, ISO 8601 (np. 2026-01-01T00:00:00Z)")
+    p_win = sub.add_parser("windows", parents=[common], help="okna kontaktu w przedziale czasu")
+    p_win.add_argument("--start", required=True, help="początek, ISO 8601 UTC")
+    p_win.add_argument("--end", required=True, help="koniec, ISO 8601 UTC")
+    p_win.add_argument("--step-hours", type=int, default=1, help="krok próbkowania [h] (domyślnie 1)")
+    args = parser.parse_args(argv)
+
+    opts = dict(antenna_height_m=args.antenna_height_m, min_elevation_deg=args.min_elevation_deg,
+                horizon_csv=args.horizon_csv)
+    try:
+        if args.cmd == "point":
+            result = dte_point(parse_utc(args.t), args.lat, args.lon, **opts)
+        else:
+            result = dte_windows(parse_utc(args.start), parse_utc(args.end), args.lat, args.lon,
+                                 step_hours=args.step_hours, **opts)
+    except (ValueError, RuntimeError) as e:
+        print(f"błąd: {e}", file=sys.stderr)
+        return 2
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
