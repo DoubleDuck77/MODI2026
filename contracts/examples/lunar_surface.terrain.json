@@ -1,0 +1,71 @@
+{
+  "meta": {
+    "feature": "lunar_surface",
+    "endpoint": "terrain",
+    "contract_version": "0.1.0",
+    "source": "example",
+    "frame": "TOPOCENTRIC_HORIZON",
+    "units": {
+      "angle": "deg",
+      "distance": "km",
+      "elevation": "m"
+    }
+  },
+  "observer": {
+    "lat_deg": -43.31,
+    "lon_deg": -11.36
+  },
+  "eye_height_m": 2.0,
+  "observer_elevation_m": -1626.0809071623044,
+  "observer_radius_km": 1735.7759190928377,
+  "r_max_km": 450.0,
+  "dem_source": "NASA LOLA 16 px/deg",
+  "window_sub": 3,
+  "n_az": 4,
+  "n_r": 2,
+  "az_step_deg": 90.0,
+  "radii_km": [
+    0.015,
+    0.015326326300029015
+  ],
+  "height_km_f32_b64": "D8rQv0kv0L+tec+/cxTQv7jN0L+UL9C/BXbPvykU0L8=",
+  "albedo_u8_b64": "+Pj4+Pj4+Pg=",
+  "horizon": {
+    "az_deg": [
+      0.0,
+      90.0,
+      180.0,
+      270.0
+    ],
+    "alt_deg": [
+      2.660510953951156,
+      2.9947752598410116,
+      18.63998681302146,
+      3.6527484679084212
+    ],
+    "distance_km": [
+      45.05949382605627,
+      46.06183380242892,
+      0.4078361241198694,
+      37.973465184321626
+    ],
+    "lat_deg": [
+      -41.82636584323898,
+      -43.291099775597175,
+      -43.32275504962136,
+      -43.29716918562259
+    ],
+    "lon_deg": [
+      -11.359999999999998,
+      -9.277143917430712,
+      -11.359999999999998,
+      -13.076196016038786
+    ],
+    "elevation_km": [
+      1.0502860388762143,
+      1.3909615123970918,
+      -1.493685033051887,
+      1.208243185049629
+    ]
+  }
+}

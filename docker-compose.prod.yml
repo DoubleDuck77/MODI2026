@@ -28,7 +28,7 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
-    mem_limit: 1g
+    mem_limit: 5g   # teren newlunar: do ~1.6 GB chwilowo, biegun do ~4.3 GB (pomiar 2026-11-14)
     logging:
       driver: json-file
       options:
