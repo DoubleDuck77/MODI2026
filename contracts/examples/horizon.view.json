@@ -1,0 +1,24 @@
+{
+  "meta": {
+    "feature": "horizon",
+    "endpoint": "view",
+    "contract_version": "0.1.0",
+    "source": "example",
+    "frame": "TOPOCENTRIC_HORIZON",
+    "units": {"angle": "deg", "distance": "km", "elevation": "m"}
+  },
+  "t": "2026-01-01T00:00:00Z",
+  "observer": {"lat_deg": 0.0, "lon_deg": 0.0},
+  "observer_elevation_m": 0.0,
+  "profile": {
+    "az_step_deg": 30.0,
+    "elevation_deg": [0.8, 1.1, 0.6, 0.3, 0.9, 1.4, 2.1, 1.7, 0.9, 0.5, 0.4, 0.7]
+  },
+  "earth": {"alt_deg": 86.59, "az_deg": 148.2, "distance_km": 359290.0},
+  "sun": {"alt_deg": 55.48, "az_deg": 87.88, "distance_km": 147402800.0},
+  "local_basis": {
+    "north": {"x": 0.0, "y": 0.0, "z": 1.0},
+    "east": {"x": 0.0, "y": 1.0, "z": 0.0},
+    "up": {"x": 1.0, "y": 0.0, "z": 0.0}
+  }
+}
