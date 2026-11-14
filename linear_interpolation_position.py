@@ -63,9 +63,10 @@ def interpoluj_polozenie(data_str: str, folder: str = "coords") -> list:
     return [dt.strftime("%Y-%m-%d %H:%M:%S"), *interpolowane]
 
 
-# Przykłady użycia:
-# 1. Oba rekordy w jednym pliku (15:00 i 16:00 z pliku 2003.csv)
-print(interpoluj_polozenie("2000-01-01 00:01", folder="coords"))
+if __name__ == "__main__":
+    # Przykłady użycia (tylko przy uruchomieniu skryptu, nie przy imporcie):
+    # 1. Oba rekordy w jednym pliku (15:00 i 16:00 z pliku 2003.csv)
+    print(interpoluj_polozenie("2000-01-01 00:01", folder="coords"))
 
-# 2. Rekordy w dwóch różnych plikach (2000-12-31 23:00 z 2000.csv oraz 2001-01-01 00:00 z 2001.csv)
-print(interpoluj_polozenie("2000-12-31 23:20", folder="coords"))
+    # 2. Rekordy w dwóch różnych plikach (2000-12-31 23:00 z 2000.csv oraz 2001-01-01 00:00 z 2001.csv)
+    print(interpoluj_polozenie("2000-12-31 23:20", folder="coords"))

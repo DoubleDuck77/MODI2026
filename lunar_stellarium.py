@@ -14,10 +14,17 @@ I_MOON = math.radians(1.5424) # Nachylenie równika księżycowego do ekliptyki
 SIDEREAL_MONTH = 27.321661  # dni
 
 def load_year_data(year):
-    filepath = f"Coords/{year}.csv"
+    # Katalog "coords" (małe c) obok skryptu — niezależnie od bieżącego katalogu.
+    # Wcześniej "Coords/" nie istniało na Linuksie i skrypt po cichu brał dane syntetyczne.
+    filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "coords", f"{year}.csv")
     if os.path.exists(filepath):
         df = pd.read_csv(filepath)
         df['time'] = pd.to_datetime(df['time'])
+        # coords/*.csv są w METRACH (|moon| ≈ 3.6e8), a cały skrypt liczy w km
+        # (R_EARTH / earth_dist, R_SUN / sun_dist, R_MOON * ... w get_topocentric_vectors).
+        pos_cols = ['sun_x', 'sun_y', 'sun_z', 'moon_x', 'moon_y', 'moon_z']
+        df[pos_cols] = df[pos_cols] / 1000.0
+        df.attrs['source'] = f"coords/{year}.csv"
         print(f"[OK] Wczytano dane dla roku {year} z: {filepath}")
     else:
         print(f"[OSTRZEŻENIE] Nie znaleziono '{filepath}'. Generuję dane testowe dla roku {year}...")
@@ -40,6 +47,7 @@ def load_year_data(year):
             'sun_x': sun_x, 'sun_y': sun_y, 'sun_z': sun_z,
             'moon_x': moon_x, 'moon_y': moon_y, 'moon_z': moon_z
         })
+        df.attrs['source'] = "dane syntetyczne (brak pliku)"
 
     j2000 = pd.Timestamp("2000-01-01 12:00:00")
     df['d_j2000_total'] = (df['time'] - j2000).dt.total_seconds() / 86400.0
@@ -440,7 +448,7 @@ def main():
 
         # HUD
         info_lines = [
-            f"Rok: {current_year} | Plik: Coords/{current_year}.csv",
+            f"Rok: {current_year} | Dane: {df.attrs.get('source', '?')}",
             f"Kamera: Az {math.degrees(cam_az):.1f}° | Alt {math.degrees(cam_alt):+.1f}° | FOV {math.degrees(fov):.1f}°",
             "-" * 45,
             f"ZIEMIA: Alt {math.degrees(earth_alt):+6.2f}° | Az {math.degrees(earth_az):6.2f}°",
