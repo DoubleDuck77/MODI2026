@@ -43,19 +43,18 @@ except ImportError:
 # ==============================================================================
 # KONFIGURACJA PRZEDZIAŁU CZASU, STREFY CZASOWEJ I WSPÓŁRZĘDNYCH SELENOGRAFICZNYCH
 # ==============================================================================
-DATA_POCZATEK = "2026-12-01 02:00"   # Format: "YYYY-MM-DD HH:MM" (czas lokalny dla KRAJ / REGION)
+DATA_POCZATEK = "2026-12-07 02:00"   # Format: "YYYY-MM-DD HH:MM" (czas lokalny dla KRAJ / REGION)
 DATA_KONIEC = "2027-01-15 23:00"     # Format: "YYYY-MM-DD HH:MM" (czas lokalny dla KRAJ / REGION)
 
 KRAJ = "Polska"                      # Nazwa kraju zgodna z time_zone_converter.py
 REGION = None                        # Region/stan dla krajów wielostrefowych (np. "Kalifornia"), inaczej None
 
 # Współrzędne selenograficzne obserwatora na Księżycu [°]
-LAT_DEG = 0                     # Szerokość selenograficzna [-90, +90] (np. okolice krateru Tycho)
-LON_DEG = 0                    # Długość selenograficzna [-180, +180]
+LAT_DEG = -87                     # Szerokość selenograficzna [-90, +90] (np. okolice krateru Tycho)
+LON_DEG = 10                     # Długość selenograficzna [-180, +180]
 
 FOLDER_DANYCH = "coords"
 FOLDER_CACHE_TOPO = "moon_topo_cache"
-PLIK_WYNIKOWY_CSV = "tabela_naslonecznienia.csv"
 
 # --- STAŁE FIZYCZNE I ASTRONOMICZNE ---
 I_S = 1361.0                         # Stała słoneczna [W/m^2]
@@ -456,31 +455,54 @@ def oblicz_widoczny_ulamek_tarczy_slonca(
     liczba_paskow: int = 31,
 ) -> float:
     """
-    Oblicza ułamek (0.0 - 1.0) powierzchni tarczy Słońca widoczny
-    ponad lokalnym horyzontem topograficznym z danych LOLA DEM.
+    Dzieli okrągłą tarczę Słońca na `liczba_paskow` PIONOWYCH pasów wzdłuż osi azymutu.
+    Dla każdego pasa pionowego oblicza, jaki procent tego pasa jest widoczny ponad
+    lokalnym horyzontem topograficznym, waży ten procent udziałem powierzchni danego
+    pasa w całkowitej powierzchni tarczy Słońca i sumuje wyniki (zwracając alpha w [0.0, 1.0]).
     """
     rho_sun = math.asin(min(1.0, R_SUN / dystans_slonce_km))
     cos_z = max(1e-4, math.cos(z_rad))
 
-    xs = np.linspace(-rho_sun, rho_sun, liczba_paskow + 1)
-    x_srodki = 0.5 * (xs[:-1] + xs[1:])
-    dx = xs[1] - xs[0]
+    # Podział szerokości kątowej tarczy Słońca [-rho_sun, +rho_sun] na pionowe pasy
+    krawedzie_x = np.linspace(-rho_sun, rho_sun, liczba_paskow + 1)
+    srodki_x = 0.5 * (krawedzie_x[:-1] + krawedzie_x[1:])
+    szerokosc_pasa_dx = float(krawedzie_x[1] - krawedzie_x[0])
 
-    pole_widoczne = 0.0
-    pole_calkowite = math.pi * (rho_sun ** 2)
+    # Całkowita wysokość, pole i procent widoczności dla każdego pasa pionowego
+    wysokosci_paskow: list[float] = []
+    pola_paskow: list[float] = []
+    procenty_widoczne_paskow: list[float] = []
 
-    for x in x_srodki:
+    for x in srodki_x:
         polowa_cieciwy = math.sqrt(max(0.0, rho_sun ** 2 - float(x) ** 2))
         z_dol = z_rad - polowa_cieciwy
         z_gora = z_rad + polowa_cieciwy
+        calkowita_wysokosc_pasa = z_gora - z_dol
+
+        if calkowita_wysokosc_pasa <= 0.0:
+            continue
 
         az_paska = (azymut_rad + float(x) / cos_z) % (2.0 * math.pi)
         h_horyzontu = topografia.kat_horyzontu(az_paska)
 
-        widoczna_wysokosc = max(0.0, z_gora - max(z_dol, h_horyzontu))
-        pole_widoczne += widoczna_wysokosc * dx
+        widoczna_wysokosc_pasa = max(0.0, z_gora - max(z_dol, h_horyzontu))
+        procent_widoczny_pasa = (widoczna_wysokosc_pasa / calkowita_wysokosc_pasa) * 100.0
 
-    alpha = pole_widoczne / pole_calkowite
+        wysokosci_paskow.append(calkowita_wysokosc_pasa)
+        pola_paskow.append(calkowita_wysokosc_pasa * szerokosc_pasa_dx)
+        procenty_widoczne_paskow.append(procent_widoczny_pasa)
+
+    pole_calkowite_paskow = sum(pola_paskow)
+    if pole_calkowite_paskow <= 0.0:
+        return 0.0
+
+    # Suma procentów widoczności wszystkich pionowych pasów ważona ich udziałem w polu tarczy
+    suma_procentow_tarczy = sum(
+        procent_pasa * (pole_pasa / pole_calkowite_paskow)
+        for procent_pasa, pole_pasa in zip(procenty_widoczne_paskow, pola_paskow)
+    )
+
+    alpha = suma_procentow_tarczy / 100.0
     return max(0.0, min(1.0, alpha))
 
 
@@ -532,8 +554,17 @@ def generuj_dane_naslonecznienia(
 ) -> tuple[list[list], dict[str, list[float]]]:
     """
     Oblicza i zwraca:
-      1) 3-kolumnową tabelę `tabela_naslonecznienia`:
-         [[data_i_godzina_lokalna_str, natezenie_W_m2, energia_skumulowana_J_m2], ...]
+      1) 5-kolumnową tabelę `tabela_naslonecznienia`:
+         [
+           [
+             data_i_godzina_lokalna_str,            # kol. 1: 'YYYY-MM-DD HH:MM'
+             natezenie_pozioma_W_m2,                # kol. 2: I_S * sin(z) * alpha [W/m^2]
+             energia_skumulowana_pozioma_J_m2,      # kol. 3: energia na płaszczyźnie poziomej [J/m^2]
+             natezenie_pionowa_W_m2,                # kol. 4: I_S * cos(z) * alpha (płaszczyzna prostopadła do gruntu) [W/m^2]
+             energia_skumulowana_pionowa_J_m2,      # kol. 5: energia na płaszczyźnie prostopadłej do gruntu [J/m^2]
+           ],
+           ...
+         ]
       2) słownik serii kątowych do wykresu widoczności nad górami:
          - 'wysokosc_gor_deg': kątowa wysokość horyzontu topograficznego w kierunku Słońca [°]
          - 'wysokosc_gornej_krawedzi_slonca_deg': wysokość kątowa górnej krawędzi tarczy Słońca [°]
@@ -580,9 +611,11 @@ def generuj_dane_naslonecznienia(
     wysokosc_gor_deg: list[float] = []
     wysokosc_gornej_krawedzi_slonca_deg: list[float] = []
 
-    energia_skumulowana_j_m2 = 0.0
+    energia_pozioma_j_m2 = 0.0
+    energia_pionowa_j_m2 = 0.0
     poprzedni_dt_utc: datetime | None = None
-    poprzednie_natezenie: float = 0.0
+    poprzednie_natezenie_poz: float = 0.0
+    poprzednie_natezenie_pion: float = 0.0
 
     for dt_utc in punkty_czasu_utc:
         if dt_utc.minute == 0 and dt_utc.second == 0:
@@ -618,20 +651,33 @@ def generuj_dane_naslonecznienia(
             topografia=topografia,
         )
 
+        # 1) Płaszczyzna pozioma (równoległa do gruntu): rzut cos(90° - z) = sin(z)
         sin_z_dodatni = max(0.0, math.sin(z_rad))
-        natezenie_w_m2 = I_S * sin_z_dodatni * alpha
+        natezenie_poz_w_m2 = I_S * sin_z_dodatni * alpha
+
+        # 2) Płaszczyzna pionowa (prostopadła do gruntu, skierowana na azymut Słońca): rzut cos(z)
+        cos_z_dodatni = max(0.0, math.cos(z_rad))
+        natezenie_pion_w_m2 = I_S * cos_z_dodatni * alpha
 
         if poprzedni_dt_utc is not None:
             dt_sekundy = (dt_utc - poprzedni_dt_utc).total_seconds()
-            energia_skumulowana_j_m2 += 0.5 * (poprzednie_natezenie + natezenie_w_m2) * dt_sekundy
+            energia_pozioma_j_m2 += 0.5 * (poprzednie_natezenie_poz + natezenie_poz_w_m2) * dt_sekundy
+            energia_pionowa_j_m2 += 0.5 * (poprzednie_natezenie_pion + natezenie_pion_w_m2) * dt_sekundy
 
         czas_lokalny_str = convert_time_zone(dt_utc.strftime("%Y-%m-%d %H:%M"), strefa_iana)
         tabela_naslonecznienia.append(
-            [czas_lokalny_str, natezenie_w_m2, energia_skumulowana_j_m2]
+            [
+                czas_lokalny_str,
+                natezenie_poz_w_m2,
+                energia_pozioma_j_m2,
+                natezenie_pion_w_m2,
+                energia_pionowa_j_m2,
+            ]
         )
 
         poprzedni_dt_utc = dt_utc
-        poprzednie_natezenie = natezenie_w_m2
+        poprzednie_natezenie_poz = natezenie_poz_w_m2
+        poprzednie_natezenie_pion = natezenie_pion_w_m2
 
     dane_katowe = {
         "wysokosc_gor_deg": wysokosc_gor_deg,
@@ -652,15 +698,12 @@ def generuj_tabele_naslonecznienia(
     krok_minut: int = 60,
 ) -> list[list]:
     """
-    Generuje 3-kolumnową tabelę `tabela_naslonecznienia`:
-      [
-        [
-          data_i_godzina_lokalna_str,          # str: 'YYYY-MM-DD HH:MM'
-          natezenie_promieniowania_W_m2,       # float: I = I_S * sin(z) * alpha [W/m^2]
-          energia_skumulowana_J_m2,            # float: energia od t_0 do t [J/m^2]
-        ],
-        ...
-      ]
+    Generuje 5-kolumnową tabelę `tabela_naslonecznienia`:
+      1. data i godzina lokalna ('YYYY-MM-DD HH:MM')
+      2. natężenie promieniowania na płaszczyźnie poziomej [W/m^2]
+      3. energia skumulowana na płaszczyźnie poziomej od początku przedziału [J/m^2]
+      4. moc/natężenie na płaszczyźnie prostopadłej do gruntu skierowanej do Słońca [W/m^2]
+      5. energia skumulowana na płaszczyźnie prostopadłej do gruntu od początku przedziału [J/m^2]
     """
     tabela, _ = generuj_dane_naslonecznienia(
         data_poczatek_lokalna=data_poczatek_lokalna,
@@ -676,22 +719,8 @@ def generuj_tabele_naslonecznienia(
     return tabela
 
 
-def zapisz_tabele_do_csv(tabela: list[list], sciezka_wyjsciowa: str = PLIK_WYNIKOWY_CSV) -> None:
-    """Zapisuje tabelę nasłonecznienia do pliku CSV."""
-    with open(sciezka_wyjsciowa, mode="w", encoding="utf-8", newline="") as plik:
-        writer = csv.writer(plik)
-        writer.writerow(
-            [
-                "data_i_godzina",
-                "natezenie_promieniowania_W_m2",
-                "energia_skumulowana_J_m2",
-            ]
-        )
-        writer.writerows(tabela)
-
-
 # ==============================================================================
-# WIZUALIZACJA W MATPLOTLIB
+# WIZUALIZACJA W MATPLOTLIB (5 WYKRESÓW)
 # ==============================================================================
 def _formatuj_offset_utc(offset: timedelta | None) -> str:
     """Formatuje przesunięcie względem UTC do postaci np. 'UTC+11.30' lub 'UTC-9'."""
@@ -745,37 +774,45 @@ def rysuj_wykresy_naslonecznienia(
     wysokosc_gornej_krawedzi_slonca_deg: list[float] | None = None,
 ) -> None:
     """
-    Wizualizuje:
-      1) przebieg natężenia promieniowania słonecznego [W/m²],
-      2) energię skumulowaną od początku przedziału [J/m²],
-      3) wysokość kątową gór oraz górnej krawędzi tarczy Słońca [°] jednocześnie.
+    Wizualizuje 5 osobnych wykresów w matplotlib:
+      1) natężenie promieniowania słonecznego — płaszczyzna pozioma [W/m²],
+      2) energia skumulowana — płaszczyzna pozioma [J/m²],
+      3) natężenie promieniowania słonecznego — płaszczyzna pionowa (do Słońca) [W/m²],
+      4) energia skumulowana — płaszczyzna pionowa (do Słońca) [J/m²],
+      5) wysokość kątowa gór oraz górnej krawędzi tarczy Słońca [°] jednocześnie.
     """
     daty = [datetime.strptime(wiersz[0], "%Y-%m-%d %H:%M") for wiersz in tabela]
-    natezenia = [wiersz[1] for wiersz in tabela]
-    energie = [wiersz[2] for wiersz in tabela]
+    natezenia_poz = [wiersz[1] for wiersz in tabela]
+    energie_poz = [wiersz[2] for wiersz in tabela]
+    has_pion = bool(tabela) and len(tabela[0]) >= 5
+    natezenia_pion = [wiersz[3] for wiersz in tabela] if has_pion else []
+    energie_pion = [wiersz[4] for wiersz in tabela] if has_pion else []
     strefa_utc = _formatuj_strefe_utc(strefa_iana, daty)
 
-    # --- Wykres 1: Natężenie promieniowania słonecznego [W/m²] ---
+    # --- Wykres 1: Natężenie promieniowania — płaszczyzna pozioma [W/m²] ---
     fig1, ax1 = plt.subplots(figsize=(12, 5))
-    ax1.plot(daty, natezenia, color="#f59e0b", linewidth=1.8, label="Natężenie promieniowania [W/m²]")
+    ax1.plot(
+        daty,
+        natezenia_poz,
+        color="#f59e0b",
+        linewidth=1.8,
+        label="Płaszczyzna pozioma (grunt): I_S·sin(z)·α [W/m²]",
+    )
     ax1.axhline(0.0, color="#64748b", linestyle="--", linewidth=1.1, label="Brak oświetlenia (0 W/m²)")
-
     ax1.fill_between(
         daty,
-        natezenia,
+        natezenia_poz,
         0.0,
-        where=[n > 0.0 for n in natezenia],
+        where=[n > 0.0 for n in natezenia_poz],
         color="#fde047",
         alpha=0.25,
         interpolate=True,
         label="Oświetlenie słoneczne (> 0 W/m²)",
     )
-
     if len(daty) > 1:
         ax1.set_xlim(daty[0], daty[-1])
-
     ax1.set_title(
-        f"Natężenie promieniowania słonecznego na powierzchni Księżyca z uwzględnieniem topografii "
+        f"Natężenie promieniowania słonecznego na płaszczyźnie poziomej Księżyca "
         f"(Lat: {lat_deg:+.2f}°, Lon: {lon_deg:+.2f}° | {strefa_utc})"
     )
     ax1.set_xlabel(f"Data i godzina ({strefa_utc})")
@@ -785,26 +822,29 @@ def rysuj_wykresy_naslonecznienia(
     fig1.autofmt_xdate()
     fig1.tight_layout()
 
-    # --- Wykres 2: Skumulowana energia na jednostkę powierzchni [J/m²] ---
+    # --- Wykres 2: Skumulowana energia — płaszczyzna pozioma [J/m²] ---
     fig2, ax2 = plt.subplots(figsize=(12, 5))
-    ax2.plot(daty, energie, color="#2563eb", linewidth=1.8, label="Energia skumulowana [J/m²]")
+    ax2.plot(
+        daty,
+        energie_poz,
+        color="#2563eb",
+        linewidth=1.8,
+        label="Energia skumulowana — płaszczyzna pozioma [J/m²]",
+    )
     ax2.axhline(0.0, color="#0284c7", linestyle="--", linewidth=1.1)
-
     ax2.fill_between(
         daty,
-        energie,
+        energie_poz,
         0.0,
         color="#38bdf8",
         alpha=0.22,
         interpolate=True,
         label="Skumulowana energia od początku przedziału",
     )
-
     if len(daty) > 1:
         ax2.set_xlim(daty[0], daty[-1])
-
     ax2.set_title(
-        f"Skumulowana energia promieniowania słonecznego na jednostkę powierzchni Księżyca "
+        f"Skumulowana energia promieniowania słonecznego — płaszczyzna pozioma "
         f"(Lat: {lat_deg:+.2f}°, Lon: {lon_deg:+.2f}° | {strefa_utc})"
     )
     ax2.set_xlabel(f"Data i godzina ({strefa_utc})")
@@ -814,32 +854,97 @@ def rysuj_wykresy_naslonecznienia(
     fig2.autofmt_xdate()
     fig2.tight_layout()
 
-    # --- Wykres 3: Wysokość kątowa gór oraz górnej krawędzi tarczy Słońca [°] ---
-    if wysokosc_gor_deg is not None and wysokosc_gornej_krawedzi_slonca_deg is not None:
+    # --- Wykres 3: Natężenie promieniowania — płaszczyzna pionowa (do Słońca) [W/m²] ---
+    if has_pion:
         fig3, ax3 = plt.subplots(figsize=(12, 5))
         ax3.plot(
+            daty,
+            natezenia_pion,
+            color="#dc2626",
+            linewidth=1.8,
+            label="Płaszczyzna pionowa (do Słońca): I_S·cos(z)·α [W/m²]",
+        )
+        ax3.axhline(0.0, color="#64748b", linestyle="--", linewidth=1.1, label="Brak oświetlenia (0 W/m²)")
+        ax3.fill_between(
+            daty,
+            natezenia_pion,
+            0.0,
+            where=[n > 0.0 for n in natezenia_pion],
+            color="#fca5a5",
+            alpha=0.28,
+            interpolate=True,
+            label="Oświetlenie słoneczne (> 0 W/m²)",
+        )
+        if len(daty) > 1:
+            ax3.set_xlim(daty[0], daty[-1])
+        ax3.set_title(
+            f"Natężenie promieniowania na płaszczyźnie prostopadłej do gruntu (skierowanej do Słońca) "
+            f"(Lat: {lat_deg:+.2f}°, Lon: {lon_deg:+.2f}° | {strefa_utc})"
+        )
+        ax3.set_xlabel(f"Data i godzina ({strefa_utc})")
+        ax3.set_ylabel("Natężenie promieniowania [W/m²]")
+        ax3.grid(True, linestyle=":", alpha=0.6)
+        ax3.legend(loc="best")
+        fig3.autofmt_xdate()
+        fig3.tight_layout()
+
+        # --- Wykres 4: Skumulowana energia — płaszczyzna pionowa [J/m²] ---
+        fig4, ax4 = plt.subplots(figsize=(12, 5))
+        ax4.plot(
+            daty,
+            energie_pion,
+            color="#059669",
+            linewidth=1.8,
+            label="Energia skumulowana — płaszczyzna pionowa (do Słońca) [J/m²]",
+        )
+        ax4.axhline(0.0, color="#047857", linestyle="--", linewidth=1.1)
+        ax4.fill_between(
+            daty,
+            energie_pion,
+            0.0,
+            color="#6ee7b7",
+            alpha=0.25,
+            interpolate=True,
+            label="Skumulowana energia od początku przedziału",
+        )
+        if len(daty) > 1:
+            ax4.set_xlim(daty[0], daty[-1])
+        ax4.set_title(
+            f"Skumulowana energia promieniowania — płaszczyzna prostopadła do gruntu (do Słońca) "
+            f"(Lat: {lat_deg:+.2f}°, Lon: {lon_deg:+.2f}° | {strefa_utc})"
+        )
+        ax4.set_xlabel(f"Data i godzina ({strefa_utc})")
+        ax4.set_ylabel("Energia skumulowana [J/m²]")
+        ax4.grid(True, linestyle=":", alpha=0.6)
+        ax4.legend(loc="best")
+        fig4.autofmt_xdate()
+        fig4.tight_layout()
+
+    # --- Wykres 5: Wysokość kątowa gór oraz górnej krawędzi tarczy Słońca [°] ---
+    if wysokosc_gor_deg is not None and wysokosc_gornej_krawedzi_slonca_deg is not None:
+        fig5, ax5 = plt.subplots(figsize=(12, 5))
+        ax5.plot(
             daty,
             wysokosc_gornej_krawedzi_slonca_deg,
             color="#f59e0b",
             linewidth=1.8,
             label="Wysokość kątowa górnej krawędzi tarczy Słońca [°]",
         )
-        ax3.plot(
+        ax5.plot(
             daty,
             wysokosc_gor_deg,
             color="#475569",
             linewidth=1.8,
             label="Wysokość kątowa gór (horyzont topograficzny) [°]",
         )
-        ax3.axhline(
+        ax5.axhline(
             0.0,
             color="#0284c7",
             linestyle="--",
             linewidth=1.1,
             label="Horyzont matematyczny (0°)",
         )
-
-        ax3.fill_between(
+        ax5.fill_between(
             daty,
             wysokosc_gornej_krawedzi_slonca_deg,
             wysokosc_gor_deg,
@@ -852,20 +957,18 @@ def rysuj_wykresy_naslonecznienia(
             interpolate=True,
             label="Górna krawędź Słońca ponad górami (tarcza widoczna)",
         )
-
         if len(daty) > 1:
-            ax3.set_xlim(daty[0], daty[-1])
-
-        ax3.set_title(
+            ax5.set_xlim(daty[0], daty[-1])
+        ax5.set_title(
             f"Wysokość kątowa gór oraz górnej krawędzi tarczy Słońca na Księżycu "
             f"(Lat: {lat_deg:+.2f}°, Lon: {lon_deg:+.2f}° | {strefa_utc})"
         )
-        ax3.set_xlabel(f"Data i godzina ({strefa_utc})")
-        ax3.set_ylabel("Wysokość kątowa [°]")
-        ax3.grid(True, linestyle=":", alpha=0.6)
-        ax3.legend(loc="best")
-        fig3.autofmt_xdate()
-        fig3.tight_layout()
+        ax5.set_xlabel(f"Data i godzina ({strefa_utc})")
+        ax5.set_ylabel("Wysokość kątowa [°]")
+        ax5.grid(True, linestyle=":", alpha=0.6)
+        ax5.legend(loc="best")
+        fig5.autofmt_xdate()
+        fig5.tight_layout()
 
     plt.show()
 
@@ -883,11 +986,13 @@ if __name__ == "__main__":
         folder_cache_topo=FOLDER_CACHE_TOPO,
     )
 
-    zapisz_tabele_do_csv(tabela_naslonecznienia, PLIK_WYNIKOWY_CSV)
-
     print(f"Wygenerowano wierszy: {len(tabela_naslonecznienia)}")
     for wiersz in tabela_naslonecznienia[:10]:
-        print(f"{wiersz[0]} | I = {wiersz[1]:8.2f} W/m^2 | E = {wiersz[2]:14.2f} J/m^2")
+        print(
+            f"{wiersz[0]} | "
+            f"I_poz = {wiersz[1]:7.2f} W/m^2 | E_poz = {wiersz[2]:13.2f} J/m^2 | "
+            f"I_pion = {wiersz[3]:7.2f} W/m^2 | E_pion = {wiersz[4]:13.2f} J/m^2"
+        )
 
     rysuj_wykresy_naslonecznienia(
         tabela_naslonecznienia,
