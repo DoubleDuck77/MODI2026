@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 import requests
 
-# Konfiguracja
+# Konfiguracja2
 API_URL = "https://ssd.jpl.nasa.gov/api/horizons.api"
 OUTPUT_FILE = "coords.csv"
 START_YEAR = 2000
