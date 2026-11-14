@@ -8,11 +8,15 @@
 Skrypt odtwarza warunki z ``Dockerfile``, więc wyniki symulacji są takie same jak w kontenerze:
 
 - Python 3.12 (obraz ``python:3.12-slim``); inna wersja → błąd zamiast instalacji;
+
 - czysty ``.venv`` z ``backend/requirements.txt`` — te same przypięte wersje stosu numerycznego
+
   (numpy, numba → llvmlite, pandas), bez pygame, więc ``app/core/legacy.py`` podstawia tę samą
   atrapę modułu co w Dockerze;
 - dane z repo (``Textures/`` z mapami v3, ``coords/``) — ścieżki domyślne z ``backend/app/settings.py``;
+
 - ten sam proces: ``uvicorn app.main:app`` z katalogu ``backend/``, bez ``--reload``.
+
 """
 
 import argparse
@@ -31,6 +35,10 @@ REQUIRED_DATA = (
     "Textures/moon_dem_nasa_16ppd_v3.npy",
     "Textures/moon_color_nasa_8k_v3.npy",
     "coords/2026.csv",
+    "linear_interpolation_position.py",
+    "time_zone_converter.py",
+    "energy_plot_generator.py",
+    "elevation_plot_generator.py",
 )
 STAMP = VENV / "requirements.sha256"
 
@@ -110,7 +118,7 @@ def main(argv=None) -> int:
     vpy = ensure_venv()
 
     print(f"\nSymulacja: http://127.0.0.1:{args.port}/sim.html   (Ctrl+C kończy)\n", flush=True)
-    env = os.environ | {"PYTHONUTF8": "1", "PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1"}
+    env = os.environ | {"PYTHONUTF8": "1", "PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": os.pathsep.join(filter(None, [str(REPO), os.environ.get("PYTHONPATH", "")]))}
     cmd = [str(vpy), "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(args.port)]
     try:
         return subprocess.call(cmd, cwd=REPO / "backend", env=env)
