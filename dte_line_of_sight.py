@@ -201,6 +201,27 @@ LDEM16_BYTES = LDEM16_SHAPE[0] * LDEM16_SHAPE[1] * 2
 LDEM16_RAW = TEXTURES_DIR / "ldem_16.img"
 NEWLUNAR_DEM_CACHE = TEXTURES_DIR / "moon_dem_v2.npy"
 HORIZON_HEADER = ["Azimuth_deg", "Altitude_deg"]
+MAX_HORIZON_GAP_DEG = 1.0        # największa dopuszczalna luka azymutu w horizon.csv
+
+# newlunar.sample_dem_bilinear dodaje do DEM sztuczny „detail” (±46 m, sinusy w kątach). Jego okres
+# wschód–zachód maleje jak cos(lat), więc przy biegunach tworzy strome, nieistniejące zbocza.
+# Zmierzone (ten DEM, antena 2 m): zawyżenie horyzontu p95 ≈ 1–2.6° do |lat| 80°, 5.7° przy 85°,
+# 12° przy 88°; przy |lat| > 89.9° próbkowanie mapy równoodległościowej się degeneruje.
+POLAR_WARNING_LAT_DEG = 80.0
+POLE_SINGULAR_LAT_DEG = 89.9
+
+
+def horizon_warnings(lat_deg: float) -> list:
+    """Ostrzeżenia o wiarygodności horyzontu z newlunar (klawisz C) dla danej szerokości."""
+    warnings = []
+    if abs(lat_deg) > POLE_SINGULAR_LAT_DEG:
+        warnings.append(f"|lat| > {POLE_SINGULAR_LAT_DEG:g}°: próbkowanie DEM w newlunar degeneruje się "
+                        "przy biegunie — horyzont i dte_contact są niewiarygodne")
+    elif abs(lat_deg) >= POLAR_WARNING_LAT_DEG:
+        warnings.append(f"|lat| ≥ {POLAR_WARNING_LAT_DEG:g}°: sztuczny „detail” ±46 m w newlunar zawyża tu "
+                        "horyzont o kilka stopni (≈6° przy 85°, ≈12° przy 88°) — dte_contact może być "
+                        "fałszywie false")
+    return warnings
 
 
 def ldem16_to_newlunar(raw_path: Path) -> np.ndarray:
@@ -311,12 +332,15 @@ def generate_horizon_csv(lat_deg: float, lon_deg: float, antenna_height_m: float
     out_dir = Path(out_dir or HORIZONS_DIR)
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"horizon_lat{lat_deg:+.4f}_lon{lon_deg:+.4f}_h{antenna_height_m:g}m.csv"
-    # zapis identyczny jak newlunar.py (klawisz C)
-    with open(path, "w", newline="", encoding="utf-8") as f_csv:
+    # zapis identyczny jak newlunar.py (klawisz C); przez plik tymczasowy, żeby równoległy odczyt
+    # nigdy nie trafił na urwany plik
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.part")
+    with open(tmp, "w", newline="", encoding="utf-8") as f_csv:
         writer = csv.writer(f_csv)
         writer.writerow(HORIZON_HEADER)
         for az_rad, alt_rad in zip(terrain.az_grid[:-1], terrain.horizon_alt):
             writer.writerow([f"{math.degrees(az_rad):.4f}", f"{math.degrees(alt_rad):.4f}"])
+    os.replace(tmp, path)
     return path, float(terrain.obs_elev_km) * 1000.0
 
 
@@ -338,6 +362,12 @@ def load_horizon_csv(path: Path) -> Tuple[np.ndarray, np.ndarray]:
     az, alt = data[:, 0], data[:, 1]
     if az[0] < 0.0 or az[-1] >= 360.0 or np.any(np.diff(az) <= 0.0):
         raise ValueError(f"{path}: azymuty muszą rosnąć w zakresie [0, 360)")
+    gap = float(np.max(np.diff(np.append(az, az[0] + 360.0))))
+    if gap > MAX_HORIZON_GAP_DEG:
+        raise ValueError(
+            f"{path}: niepełny horyzont — luka azymutu {gap:g}° (dopuszczalne ≤ {MAX_HORIZON_GAP_DEG:g}°; "
+            f"plik z klawisza C ma 720 wierszy co 0.5°)"
+        )
     return az, alt
 
 
@@ -438,6 +468,7 @@ def dte_point(t: datetime, lat_deg: float, lon_deg: float, *, antenna_height_m: 
         "min_elevation_deg": float(min_elevation_deg),
         "dte_contact": bool(r["contact"][0]),
         "horizon_csv": str(r["path"]),
+        "warnings": horizon_warnings(lat_deg),
     }
 
 
@@ -480,6 +511,7 @@ def dte_windows(start: datetime, end: datetime, lat_deg: float, lon_deg: float, 
         "samples": len(times),
         "windows": windows,
         "visible_fraction": round(total / (end - start), 4),
+        "warnings": horizon_warnings(lat_deg),
     }
 
 
@@ -523,6 +555,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except (ValueError, RuntimeError) as e:
         print(f"błąd: {e}", file=sys.stderr)
         return 2
+    for warning in result["warnings"]:
+        print(f"ostrzeżenie: {warning}", file=sys.stderr)
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0
 
