@@ -45,3 +45,7 @@ body.sim-page {
 .surface-hud { top: 14px; right: 14px; max-width: calc(100% - 320px); overflow: hidden; font-size: 13px; background: rgba(15, 20, 30, 0.76); }
 .surface-observer .sim-buttons { margin-top: 6px; }
 .surface-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+
+/* --- tryb Orbita (port neworb: Księżyc w WebGL, reszta na canvas 2D) --- */
+.orbit-root canvas { position: absolute; inset: 0; display: block; }
+.orbit-overlay { outline: none; }
