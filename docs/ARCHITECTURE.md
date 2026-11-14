@@ -103,6 +103,30 @@ Bez Dockera: `cd backend && pip install -r requirements.txt && uvicorn app.main:
 Kontrakty można oglądać w `/docs` (schematy OpenAPI generowane z Pydantic), w `contracts/examples/`
 i na żywo w inspektorze na stronie.
 
+## Strona symulacji `/sim.html` (newlunar + neworb)
+
+Osobna strona z dwoma trybami: **Powierzchnia** (port `newlunar.py`) i **Orbita** (port `neworb.py`).
+Port jest wierny 1:1. Model, stałe, tekstury, progi, komunikaty i próbkowanie są takie jak w oryginałach.
+Zgodność z rendererami pygame sprawdzano porównaniem obrazów.
+
+- **Backend.** Moduły `lunar_surface` (`sky`, `terrain`, `stars`) i `lunar_orbit` (`catalog`, `initial`, `propagate`)
+  importują root-skrypty przez `app.core.legacy.import_root_script`. Brak pygame podstawia atrapę modułu.
+  Skryptów nie edytujemy, a fizyki nie kopiujemy do `backend/`.
+  W Dockerze skrypty są kopiowane do `/srv`, czyli do `Settings.scripts_dir`, które można nadpisać przez `MODI_SCRIPTS_DIR`.
+- **Orbita** liczy się na backendzie paczkami (`propagate`, do 2000 próbek ze stanem i diagnostyką) z numbą,
+  bo bez niej RK4 neworb jest kilkadziesiąt razy wolniejsze. Przeglądarka odtwarza paczki interpolacją Hermite'a.
+- **Teren**: `LunarTerrain3D` z map v3. Pamięci zajmuje około 0.5 GB stale i do 1.6 GB chwilowo, a na biegunie
+  około 1.4 GB stale i do 4.3 GB chwilowo, dlatego prod ma `mem_limit: 5g`. Siatka biegunowa 720×480
+  to te same próbki co profil horyzontu.
+- **Frontend**: `frontend/sim.html` i `frontend/js/sim/` (`surface/*`, `orbit/*`). Pliki frontendu idą
+  z `Cache-Control: no-cache` (rewalidacja ETag), żeby przeglądarka nie wykonywała starych modułów ES.
+
+```bash
+API=http://localhost:8000/api/v1; T=2026-11-20T12:00:00Z
+curl -s "$API/lunar_surface/sky?t=$T&lat_deg=-43.31&lon_deg=-11.36" | python3 -m json.tool | head
+curl -s "$API/lunar_orbit/initial?t=$T&preset=LRO"
+```
+
 ## Produkcja
 
 `https://lunarsims.reachit.space` działa na mainserv (192.168.0.3) z `docker-compose.prod.yml`:
@@ -120,23 +144,23 @@ edge na NAS (publiczny TLS) → nginx na .3 (routing po `Host`) → `127.0.0.1:4
 ```bash
 git pull && docker compose -f docker-compose.prod.yml up -d --build   # start i aktualizacja
 docker logs -f lunarsims                                              # logi (IP klienta z X-Forwarded-For)
-curl -s 127.0.0.1:4550/health                                         # {"status":"ok","features":7}
+curl -s 127.0.0.1:4550/health                                         # {"status":"ok","features":9}
 ```
 
 ## Jak sprawdzić, czy działa
 
 ```bash
 T=2026-01-01T00:00:00Z; API=http://localhost:8000/api/v1
-curl -s localhost:8000/health                                   # {"status":"ok","features":7}
+curl -s localhost:8000/health                                   # {"status":"ok","features":9}
 curl -s "$API/frame?t=$T&lat_deg=10" | python3 -m json.tool     # 6 payloadów frame, errors: {}
 curl -s -o /dev/null -w '%{http_code}\n' "$API/frame?t=2101-01-01T00:00:00Z"   # 422
 # każdy endpoint z manifestu → 200
 curl -s $API/features | python3 -c "import sys,json; [print(e['path']) for f in json.load(sys.stdin)['features'] for e in f['endpoints']]" \
-  | while read p; do echo "$(curl -s -o /dev/null -w '%{http_code}' "localhost:8000$p?t=$T&start=$T&end=2026-01-01T02:00:00Z") $p"; done
+  | while read p; do echo "$(curl -s -o /dev/null -w '%{http_code}' "localhost:8000$p?t=$T&start=$T&end=2026-01-01T02:00:00Z&preset=LRO&x_km=1787.4&y_km=0&z_km=0&vx_kms=0&vy_kms=0&vz_kms=1.656&duration_s=600&sample_dt_s=60") $p"; done
 # każdy zasób z kontraktów → 200
 grep -ho '"/textures/[^"]*"' contracts/examples/*.json | sort -u | tr -d '"' \
   | while read u; do echo "$(curl -sI -o /dev/null -w '%{http_code}' localhost:8000$u) $u"; done
 ```
 
-W przeglądarce: panel warstw pokazuje 7 pozycji, inspektor pokazuje payload każdego endpointu,
+W przeglądarce: panel warstw pokazuje 9 pozycji, inspektor pokazuje payload każdego endpointu,
 a zmiana czasu lub obserwatora wysyła jedno nowe `/api/v1/frame`.
