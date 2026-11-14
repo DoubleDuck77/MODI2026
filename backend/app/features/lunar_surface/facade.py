@@ -32,6 +32,7 @@ from app.features.lunar_surface.year_data import load_year, time_index
 DEM_FILE = "moon_dem_nasa_16ppd_v3.npy"
 COLOR_FILE = "moon_color_nasa_8k_v3.npy"
 DEM_SOURCE = "NASA LOLA 16 px/deg"  # ten sam opis co newlunar.py:160
+ALBEDO_SCALE = 0.3  # LUT newlunar: 0.055 + 0.22·v^1.15 ∈ [0.055, 0.275]
 
 
 def _vec(v) -> tuple:
@@ -71,6 +72,28 @@ class LunarSurfaceFacade(BaseFacade):
             color = np.load(color_path, mmap_mode="r")
             self._terrain_obj = self.nl.LunarTerrain3D(dem, color)
         return self._terrain_obj
+
+    def _cell_albedo(self, terrain, lat_deg, lon_deg, radii_km, daz_rad):
+        """(n_r, n_az, 3) albedo — średnia z ``win["sat_a"]`` po kwadracie komórki (pod lockiem)."""
+        nl, w = self.nl, terrain.win
+        sub = w.get("sub", 1)
+        fr, fc = terrain._window_local(lat_deg, lon_deg)
+        # krok radialny siatki geometrycznej i szerokość komórki w azymucie [km]
+        edges = np.concatenate([[0.0], np.sqrt(radii_km[1:] * radii_km[:-1]), [radii_km[-1]]])
+        cell_km = np.maximum(np.diff(edges), radii_km * daz_rad)[:, None]
+        rows_per_km = sub * terrain.H / (np.pi * nl.R_MOON)
+        cols_per_km = sub * terrain.W / (2.0 * np.pi * nl.R_MOON * np.maximum(np.cos(np.radians(lat_deg)), 1e-3))
+        hr = np.maximum(0.5, 0.5 * cell_km * rows_per_km)
+        hc = np.maximum(0.5, 0.5 * cell_km * cols_per_km)
+        nr, nc = w["nrows"], w["ncols"]
+        r0 = np.clip(np.floor(fr - hr), 0, nr - 1).astype(np.int64)
+        r1 = np.clip(np.ceil(fr + hr), 1, nr).astype(np.int64)
+        c0 = np.clip(np.floor(fc - hc), 0, nc - 1).astype(np.int64)
+        c1 = np.clip(np.ceil(fc + hc), 1, nc).astype(np.int64)
+        r1 = np.maximum(r1, r0 + 1)
+        c1 = np.maximum(c1, c0 + 1)
+        flat = terrain._rect_mean(w["sat_a"], r0.ravel(), c0.ravel(), r1.ravel(), c1.ravel())
+        return flat.reshape(lat_deg.shape + (3,))
 
     # --- endpointy -----------------------------------------------------------------------
 
@@ -185,12 +208,11 @@ class LunarSurfaceFacade(BaseFacade):
             h_lon = np.degrees(np.arctan2(u_hor[..., 1], u_hor[..., 0]))
             h_elev = terrain.sample_window_mesh(h_lat, h_lon)
 
-            # Albedo: najbliższy piksel mapy koloru 8K (średnia RGB, surowe 0–255).
-            AH, AW = terrain.AH, terrain.AW
-            py = np.clip(np.floor((90.0 - h_lat) / 180.0 * AH).astype(np.int64), 0, AH - 1)
-            px = np.floor((h_lon + 180.0) / 360.0 * AW).astype(np.int64) % AW
-            albedo = np.asarray(terrain.albedo_map[py, px], dtype=np.float32).mean(axis=-1)
-            albedo = np.clip(np.rint(albedo), 0, 255).astype(np.uint8)
+            # Albedo jak w newlunar.draw_3d: średnia albedo (LUT nałożony per piksel 8K) po powierzchni
+            # komórki, z SAT okna ``win["sat_a"]`` przez ``LunarTerrain3D._rect_mean``. Komórką jest
+            # kwadrat o boku max(krok radialny, r·krok azymutu) wokół próbki siatki biegunowej.
+            albedo = self._cell_albedo(terrain, h_lat, h_lon, hor_radii_km, 2.0 * np.pi / terrain.n_az)
+            albedo_u8 = np.clip(np.rint(albedo / ALBEDO_SCALE * 255.0), 0, 255).astype(np.uint8)
 
             n_az = terrain.n_az
             horizon = HorizonProfile(
@@ -218,7 +240,8 @@ class LunarSurfaceFacade(BaseFacade):
             az_step_deg=360.0 / n_az,
             radii_km=hor_radii_km.tolist(),
             height_km_f32_b64=_b64(h_elev, "<f4"),
-            albedo_u8_b64=_b64(albedo, "u1"),
+            albedo_rgb_u8_b64=_b64(albedo_u8, "u1"),
+            albedo_scale=ALBEDO_SCALE,
             horizon=horizon,
             **out,
         )

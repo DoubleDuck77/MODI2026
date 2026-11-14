@@ -98,7 +98,8 @@ class LunarTerrainPatch(FeatureResponse):
     az_step_deg: float
     radii_km: List[float]
     height_km_f32_b64: str = Field(description="float32 LE, kształt (n_r, n_az), wysokość względem R_MOON [km]")
-    albedo_u8_b64: str = Field(description="uint8, kształt (n_r, n_az), surowy kolor mapy 8K (średnia RGB)")
+    albedo_rgb_u8_b64: str = Field(description="uint8, kształt (n_r, n_az, 3): albedo = u8/255 · albedo_scale")
+    albedo_scale: float = Field(gt=0, description="Albedo po LUT newlunar (0.055..0.275) zakodowane jako u8/255·scale")
     horizon: HorizonProfile
 
     @model_validator(mode="after")
@@ -108,8 +109,8 @@ class LunarTerrainPatch(FeatureResponse):
             raise ValueError("radii_km musi mieć n_r wartości")
         if _b64_len(self.height_km_f32_b64) != 4 * n:
             raise ValueError("height_km_f32_b64 musi mieć n_r·n_az wartości float32")
-        if _b64_len(self.albedo_u8_b64) != n:
-            raise ValueError("albedo_u8_b64 musi mieć n_r·n_az bajtów")
+        if _b64_len(self.albedo_rgb_u8_b64) != 3 * n:
+            raise ValueError("albedo_rgb_u8_b64 musi mieć n_r·n_az·3 bajtów")
         h = self.horizon
         if any(len(getattr(h, f)) != self.n_az for f in HorizonProfile.model_fields):
             raise ValueError("profil horyzontu musi mieć n_az wartości w każdej kolumnie")

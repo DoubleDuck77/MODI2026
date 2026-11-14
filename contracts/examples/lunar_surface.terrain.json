@@ -29,7 +29,8 @@
     0.015326326300029015
   ],
   "height_km_f32_b64": "D8rQv0kv0L+tec+/cxTQv7jN0L+UL9C/BXbPvykU0L8=",
-  "albedo_u8_b64": "+Pj4+Pj4+Pg=",
+  "albedo_rgb_u8_b64": "3+Lm3+Lm3+Lm3+Lm3+Lm3+Lm3+Lm3+Lm",
+  "albedo_scale": 0.3,
   "horizon": {
     "az_deg": [
       0.0,
