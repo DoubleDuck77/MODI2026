@@ -2,6 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Aktualizacja po `f4ca9e2` („updates2newlunar”).** Część opisu `newlunar.py` niżej jest historyczna:
+> - `newlunar.py` pobiera teraz działający DEM z NASA SVS (`ldem_3_8bit.jpg`) do `Textures/moon_dem.npy` (1024×512, 8 bitów, ~10.7 km/px). Nie wpada w proceduralny fallback i nie czyta już `moon_dem_v2.npy`.
+> - API: `update_observer(lat, lon, eye_height_m=2.0)`. Klawisz C zapisuje `horizon.csv` w 10 kolumnach (`Azimuth_deg,Horizon_Altitude_deg,…,Observer_*`), 480 wierszy co 0.75°.
+> - DTE dalej podaje kodowi `newlunar` własny, dokładniejszy LOLA LDEM_16 (`moon_dem_v2.npy`, z niego korzysta też `lunar_stellarium.py`) i zapisuje horyzont funkcją `export_horizon_csv`, czyli tą samą co klawisz C. `load_horizon_csv` czyta oba formaty. Gotowy plik z klawisza C podany dla innego punktu albo innej wysokości anteny daje błąd.
+
 **Cel:** Jeden samodzielny plik `dte_line_of_sight.py` w katalogu głównym, tak jak inne skrypty w repo. Dla punktu na Księżycu i chwili UTC zwraca bool „jest kontakt z Ziemią” (DTE). Horyzont terenowy pochodzi z pliku `horizon.csv` liczonego **dokładnie tak jak klawisz C w `newlunar.py`**, ale automatycznie, bez okna i bez klikania. Pozycję Ziemi z libracją liczymy sami. Moduł liczy też okna kontaktu w przedziale czasu i wypisuje wynik jako JSON z CLI.
 
 **Architektura:** Moduł ma cztery sekcje.

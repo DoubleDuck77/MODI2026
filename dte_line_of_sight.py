@@ -20,7 +20,9 @@ Import modułu niczego nie wypisuje ani nie pobiera; DEM i ``newlunar`` ładują
 pierwszym użyciu.
 """
 
+import contextlib
 import csv
+import io
 import math
 import os
 import sys
@@ -189,10 +191,11 @@ def earth_in_moon_frame_km(eph: Ephemeris, times: Sequence[datetime]) -> np.ndar
 
 # --------------------------- TEREN / HORYZONT ---------------------------
 #
-# newlunar.py liczy horyzont (klawisz C) z DEM w Textures/moon_dem_v2.npy. Jego adresy pobierania
-# DEM (Wikimedia) zwracają 404, więc bez tego cache używa proceduralnego, zmyślonego terenu.
-# Tu zapisujemy do tego cache prawdziwy LOLA LDEM_16 w formacie newlunar (float32, km względem
-# 1737.4 km, wiersz 0 = lat +90, kolumna 0 = lon −180) i liczymy horyzont jego własnym kodem.
+# Horyzont liczy kod newlunar.py (LunarTerrain3D.update_observer + export_horizon_csv, czyli klawisz C).
+# Sam newlunar bierze DEM z Textures/moon_dem.npy (SVS ldem_3_8bit.jpg: 1024×512, ~10.7 km/px,
+# 8 bitów ≈ 78 m na poziom). Do DTE podajemy mu dokładniejszy LOLA LDEM_16 (5760×2880, ~1.9 km/px,
+# 0.5 m) w tym samym formacie (float32, km względem 1737.4 km, wiersz 0 = lat +90, kolumna 0 =
+# lon −180), zapisany w Textures/moon_dem_v2.npy — tego cache używa też lunar_stellarium.py.
 
 LDEM16_URL = ("https://pds-geosciences.wustl.edu/lro/lro-l-lola-3-rdr-v1/lrolol_1xxx/"
               "data/lola_gdr/cylindrical/img/ldem_16.img")
@@ -200,13 +203,16 @@ LDEM16_SHAPE = (2880, 5760)                      # 16 px/°, kolumna 0 = lon 0°
 LDEM16_BYTES = LDEM16_SHAPE[0] * LDEM16_SHAPE[1] * 2
 LDEM16_RAW = TEXTURES_DIR / "ldem_16.img"
 NEWLUNAR_DEM_CACHE = TEXTURES_DIR / "moon_dem_v2.npy"
-HORIZON_HEADER = ["Azimuth_deg", "Altitude_deg"]
+# horizon.csv z klawisza C: kolumna 0 = azymut, kolumna 1 = elewacja horyzontu (stary format
+# newlunar miał nagłówek "Altitude_deg" i 2 kolumny, obecny "Horizon_Altitude_deg" i 10 kolumn)
+HORIZON_AZ_COL = "Azimuth_deg"
+HORIZON_ALT_COLS = ("Horizon_Altitude_deg", "Altitude_deg")
 MAX_HORIZON_GAP_DEG = 1.0        # największa dopuszczalna luka azymutu w horizon.csv
+OBSERVER_MATCH_TOL_DEG = 1e-4    # horizon.csv zapisuje położenie obserwatora z 6 miejscami po przecinku
 
-# newlunar.sample_dem_bilinear dodaje do DEM sztuczny „detail” (±46 m, sinusy w kątach). Jego okres
+# newlunar.sample_dem_bilinear dodaje do DEM sztuczny „detail” (±55 m, sinusy w kątach). Jego okres
 # wschód–zachód maleje jak cos(lat), więc przy biegunach tworzy strome, nieistniejące zbocza.
-# Zmierzone (ten DEM, antena 2 m): zawyżenie horyzontu p95 ≈ 1–2.6° do |lat| 80°, 5.7° przy 85°,
-# 12° przy 88°; przy |lat| > 89.9° próbkowanie mapy równoodległościowej się degeneruje.
+# Przy |lat| > 89.9° próbkowanie mapy równoodległościowej się degeneruje.
 POLAR_WARNING_LAT_DEG = 80.0
 POLE_SINGULAR_LAT_DEG = 89.9
 
@@ -218,9 +224,9 @@ def horizon_warnings(lat_deg: float) -> list:
         warnings.append(f"|lat| > {POLE_SINGULAR_LAT_DEG:g}°: próbkowanie DEM w newlunar degeneruje się "
                         "przy biegunie — horyzont i dte_contact są niewiarygodne")
     elif abs(lat_deg) >= POLAR_WARNING_LAT_DEG:
-        warnings.append(f"|lat| ≥ {POLAR_WARNING_LAT_DEG:g}°: sztuczny „detail” ±46 m w newlunar zawyża tu "
-                        "horyzont o kilka stopni (≈6° przy 85°, ≈12° przy 88°) — dte_contact może być "
-                        "fałszywie false")
+        warnings.append(f"|lat| ≥ {POLAR_WARNING_LAT_DEG:g}°: sztuczny „detail” ±55 m w newlunar zawyża tu "
+                        "horyzont (p95: ≈2° przy 80°, ≈9–13° przy 85°, ≈21–24° przy 88°) — dte_contact "
+                        "może być fałszywie false")
     return warnings
 
 
@@ -302,14 +308,7 @@ def _terrain():
     """Jedna instancja newlunar.LunarTerrain3D na proces (albedo nie jest potrzebne do horyzontu)."""
     global _TERRAIN
     if _TERRAIN is None:
-        nl = _newlunar()
-        dem = ensure_newlunar_dem()
-        cwd = os.getcwd()
-        os.chdir(REPO_DIR)   # LunarTerrain3D zapisuje Textures/regolith_detail_512.npz względem cwd
-        try:
-            _TERRAIN = nl.LunarTerrain3D(dem, np.zeros((2, 2, 3), dtype=np.float32))
-        finally:
-            os.chdir(cwd)
+        _TERRAIN = _newlunar().LunarTerrain3D(ensure_newlunar_dem(), np.zeros((2, 2, 3), dtype=np.float32))
     return _TERRAIN
 
 
@@ -327,36 +326,40 @@ def generate_horizon_csv(lat_deg: float, lon_deg: float, antenna_height_m: float
     """Horyzont terenowy jak klawisz C w newlunar.py, bez okna. Zwraca (ścieżka CSV, grunt [m])."""
     _check_observer(lat_deg, lon_deg, antenna_height_m)
     terrain = _terrain()
-    terrain.update_observer(lat_deg, lon_deg, alt_above_surface_km=antenna_height_m / 1000.0)
+    terrain.update_observer(lat_deg, lon_deg, eye_height_m=antenna_height_m)
 
     out_dir = Path(out_dir or HORIZONS_DIR)
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"horizon_lat{lat_deg:+.4f}_lon{lon_deg:+.4f}_h{antenna_height_m:g}m.csv"
-    # zapis identyczny jak newlunar.py (klawisz C); przez plik tymczasowy, żeby równoległy odczyt
-    # nigdy nie trafił na urwany plik
+    # zapisuje sam newlunar (ta sama funkcja co klawisz C), przez plik tymczasowy, żeby równoległy
+    # odczyt nigdy nie trafił na urwany plik; jego komunikat "[OK] ..." nie może trafić na stdout (JSON)
     tmp = path.with_name(f"{path.name}.{os.getpid()}.part")
-    with open(tmp, "w", newline="", encoding="utf-8") as f_csv:
-        writer = csv.writer(f_csv)
-        writer.writerow(HORIZON_HEADER)
-        for az_rad, alt_rad in zip(terrain.az_grid[:-1], terrain.horizon_alt):
-            writer.writerow([f"{math.degrees(az_rad):.4f}", f"{math.degrees(alt_rad):.4f}"])
+    with contextlib.redirect_stdout(io.StringIO()):
+        terrain.export_horizon_csv(str(tmp))
     os.replace(tmp, path)
     return path, float(terrain.obs_elev_km) * 1000.0
 
 
-def load_horizon_csv(path: Path) -> Tuple[np.ndarray, np.ndarray]:
-    """Czyta horizon.csv (format klawisza C): zwraca (azymuty [deg], elewacje horyzontu [deg])."""
+def load_horizon_csv(path: Path) -> Tuple[np.ndarray, np.ndarray, dict]:
+    """Czyta horizon.csv z klawisza C (obecny 10-kolumnowy albo stary 2-kolumnowy format).
+
+    Zwraca (azymuty [deg], elewacje horyzontu [deg], meta), gdzie ``meta`` ma kolumny
+    ``Observer_*`` z pierwszego wiersza (pusty słownik dla starego formatu).
+    """
     path = Path(path)
     if not path.is_file():
         raise ValueError(f"{path}: brak pliku horyzontu")
     with open(path, newline="", encoding="utf-8") as f:
         rows = list(csv.reader(f))
-    if not rows or [c.strip() for c in rows[0]] != HORIZON_HEADER:
-        raise ValueError(f"{path}: oczekiwano nagłówka {','.join(HORIZON_HEADER)}")
+    header = [c.strip() for c in rows[0]] if rows else []
+    if len(header) < 2 or header[0] != HORIZON_AZ_COL or header[1] not in HORIZON_ALT_COLS:
+        raise ValueError(f"{path}: oczekiwano nagłówka {HORIZON_AZ_COL},{HORIZON_ALT_COLS[0]},… "
+                         f"(plik z klawisza C w newlunar.py)")
     try:
         data = np.array([[float(r[0]), float(r[1])] for r in rows[1:] if r], dtype=np.float64)
+        meta = {k: float(v) for k, v in zip(header, rows[1]) if k.startswith("Observer_")} if len(rows) > 1 else {}
     except (ValueError, IndexError):
-        raise ValueError(f"{path}: niepoprawny wiersz danych (oczekiwano dwóch liczb)") from None
+        raise ValueError(f"{path}: niepoprawny wiersz danych (oczekiwano liczb)") from None
     if len(data) < 2 or not np.all(np.isfinite(data)):
         raise ValueError(f"{path}: za mało wierszy lub wartości nieskończone")
     az, alt = data[:, 0], data[:, 1]
@@ -366,9 +369,9 @@ def load_horizon_csv(path: Path) -> Tuple[np.ndarray, np.ndarray]:
     if gap > MAX_HORIZON_GAP_DEG:
         raise ValueError(
             f"{path}: niepełny horyzont — luka azymutu {gap:g}° (dopuszczalne ≤ {MAX_HORIZON_GAP_DEG:g}°; "
-            f"plik z klawisza C ma 720 wierszy co 0.5°)"
+            f"plik z klawisza C ma 480 wierszy co 0.75°)"
         )
-    return az, alt
+    return az, alt, meta
 
 
 def horizon_at(az_tab: np.ndarray, alt_tab: np.ndarray, az_deg) -> np.ndarray:
@@ -393,13 +396,30 @@ def _iso(t: datetime) -> str:
 
 def _horizon_source(lat_deg: float, lon_deg: float, antenna_height_m: float,
                     horizon_csv: Optional[Path]):
-    """(ścieżka CSV, grunt [m] albo None, azymuty, elewacje). Bez ``horizon_csv`` generuje plik jak klawisz C."""
+    """(ścieżka CSV, grunt [m] albo None, azymuty, elewacje). Bez ``horizon_csv`` generuje plik jak klawisz C.
+
+    Gotowy plik z klawisza C zapisuje, dla jakiego punktu i wysokości oka był liczony — horyzont
+    z innego miejsca dałby po cichu zły wynik, więc niezgodność z argumentami to błąd.
+    """
     if horizon_csv is None:
         path, ground_m = generate_horizon_csv(lat_deg, lon_deg, antenna_height_m)
-    else:
-        path, ground_m = Path(horizon_csv), None
-    az_tab, alt_tab = load_horizon_csv(path)
-    return path, ground_m, az_tab, alt_tab
+        az_tab, alt_tab, _ = load_horizon_csv(path)
+        return path, ground_m, az_tab, alt_tab
+
+    path = Path(horizon_csv)
+    az_tab, alt_tab, meta = load_horizon_csv(path)
+    if "Observer_Lat_deg" in meta and "Observer_Lon_deg" in meta:
+        f_lat, f_lon = meta["Observer_Lat_deg"], meta["Observer_Lon_deg"]
+        d_lon = abs((f_lon - lon_deg + 180.0) % 360.0 - 180.0)
+        if abs(f_lat - lat_deg) > OBSERVER_MATCH_TOL_DEG or d_lon > OBSERVER_MATCH_TOL_DEG:
+            raise ValueError(f"{path} jest dla punktu lat={f_lat:g}, lon={f_lon:g}, "
+                             f"a podano lat={lat_deg:g}, lon={lon_deg:g}")
+    f_height = meta.get("Observer_Height_above_surface_m")
+    if f_height is not None and abs(f_height - antenna_height_m) > 0.01:
+        raise ValueError(f"{path} jest dla wysokości {f_height:g} m nad gruntem, a podano "
+                         f"--antenna-height-m {antenna_height_m:g}")
+    ground_km = meta.get("Observer_Elevation_km")
+    return path, None if ground_km is None else ground_km * 1000.0, az_tab, alt_tab
 
 
 def _evaluate(times: Sequence[datetime], lat_deg: float, lon_deg: float, antenna_height_m: float,

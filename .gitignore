@@ -9,3 +9,7 @@ Textures/regolith_detail_*.npz
 Textures/ldem_*.img
 Textures/*.part
 horizons/
+venv/
+Textures/moon_dem.npy
+Textures/moon_albedo.npy
+Textures/moon_color.jpg
