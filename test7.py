@@ -325,9 +325,9 @@ def _clip_poly_near(verts, near_z: float):
 class LunarTerrain3D:
     """
     Model 3D powierzchni Księżyca oparty na jednorodnej siatce samych czworokątów
-    (przekształcenie Fonga–Shirleya z kwadratu [-1, 1]^2 na dysk horyzontu 450 km):
-    - Zero trójkątów przejściowych, zero T-junctions, zero osobliwości biegunowej,
-    - Kwadraty 2.5 m x 2.5 m przy obserwatorze płynnie przechodzące w okrągły horyzont,
+    (siatka log-polarna o stałych proporcjach 1:1, od 2.5 m do horyzontu 450 km):
+    - Zero trójkątów przejściowych i T-junctions; komórki są kwadratami na każdym dystansie,
+    - Kwadraty 2.5 m x 2.5 m przy obserwatorze, rosnące geometrycznie aż do okrągłego horyzontu,
     - Ścisłe sortowanie koncentrycznymi pierścieniami od horyzontu do obserwatora.
     """
 
@@ -337,55 +337,34 @@ class LunarTerrain3D:
         self.albedo_map = albedo_rgb
         self.AH, self.AW = albedo_rgb.shape[:2]
 
-        # 120 x 120 = 14 400 czystych czworokątów
-        self.n_cells = 120
-        self.n_half = self.n_cells // 2
-        u_1d = np.linspace(-1.0, 1.0, self.n_cells + 1)
-        U, V = np.meshgrid(u_1d, u_1d, indexing="ij")
-
-        # Przekształcenie Fonga-Shirleya: kwadrat [-1, 1]^2 -> koło jednostkowe
-        Xd = U * np.sqrt(np.maximum(0.0, 1.0 - 0.5 * (V * V)))
-        Yd = V * np.sqrt(np.maximum(0.0, 1.0 - 0.5 * (U * U)))
-
-        rho = np.hypot(Xd, Yd)
-        r_linear_km = 0.15
+        # Siatka log-polarna: Δr/r = Δθ  =>  każda komórka to (lokalnie) kwadrat 1:1 o kątach 90°
+        self.n_az = 72
+        r0_km = 0.0025
         r_max_km = 450.0
-        r_km = r_linear_km * rho + (r_max_km - r_linear_km) * (rho ** 4.5)
-        scale = np.where(rho > 1e-12, r_km / np.maximum(rho, 1e-12), r_linear_km)
+        dtheta = 2.0 * math.pi / self.n_az
+        self.n_rings = int(round(math.log(r_max_km / r0_km) / dtheta))
+        q = (r_max_km / r0_km) ** (1.0 / self.n_rings)
+        r_1d = r0_km * q ** np.arange(self.n_rings + 1)
+        th_1d = np.linspace(0.0, 2.0 * math.pi, self.n_az + 1)  # szew zduplikowany
+        R_g, TH_g = np.meshgrid(r_1d, th_1d, indexing="ij")
 
-        self.N_grid = Xd * scale
-        self.E_grid = Yd * scale
-        self.s_grid = r_km
+        self.N_grid = R_g * np.cos(TH_g)
+        self.E_grid = R_g * np.sin(TH_g)
+        self.s_grid = R_g
         self.delta_grid = self.s_grid / R_MOON
         self.cos_delta_grid = np.cos(self.delta_grid)
-        self.sinc_over_R = np.where(
-            self.s_grid > 1e-12,
-            np.sin(self.delta_grid) / np.maximum(self.s_grid, 1e-12),
-            1.0 / R_MOON,
-        )
+        self.sinc_over_R = np.sin(self.delta_grid) / self.s_grid
 
-        # Wstępnie wyliczona kolejność kafelków od najdalszego pierścienia (shell=59) do centrum (shell=0)
-        shells = []
-        for shell in range(self.n_half - 1, -1, -1):
-            lo = self.n_half - 1 - shell
-            hi = self.n_half + shell
-            ring_cells = []
-            if lo == hi:
-                ring_cells.append((lo, lo))
-            else:
-                for j in range(lo, hi + 1):
-                    ring_cells.append((lo, j))
-                    ring_cells.append((hi, j))
-                for i in range(lo + 1, hi):
-                    ring_cells.append((i, lo))
-                    ring_cells.append((i, hi))
-            shells.append(ring_cells)
-        self.shell_order = shells
+        # Kolejność malarska: pierścienie od najdalszego (horyzont) do najbliższego
+        self.shell_order = [
+            [(i, j) for j in range(self.n_az)]
+            for i in range(self.n_rings - 1, -1, -1)
+        ]
 
         # Niezależny raycasting 360° do wyznaczania profilu horyzontu topograficznego
         self.hor_radii_km = np.geomspace(0.02, 450.0, 120)
         self.az_grid = np.linspace(0.0, 2.0 * np.pi, 721)
-        self.n_az = len(self.az_grid) - 1
+        self.n_hor_az = len(self.az_grid) - 1
 
         self.cached_lat = None
         self.cached_lon = None
@@ -525,8 +504,11 @@ class LunarTerrain3D:
 
         mid_n = 0.25 * (rel_n[:-1, :-1] + rel_n[1:, :-1] + rel_n[1:, 1:] + rel_n[:-1, 1:])
         mid_e = 0.25 * (rel_e[:-1, :-1] + rel_e[1:, :-1] + rel_e[1:, 1:] + rel_e[:-1, 1:])
-        mid_lat = 0.25 * (v_lat[:-1, :-1] + v_lat[1:, :-1] + v_lat[1:, 1:] + v_lat[:-1, 1:])
-        mid_lon = 0.25 * (v_lon[:-1, :-1] + v_lon[1:, :-1] + v_lon[1:, 1:] + v_lon[:-1, 1:])
+        # Środek komórki liczony na wektorach jednostkowych (odporny na szew ±180° i bieguny)
+        mid_u = 0.25 * (u_body[:-1, :-1] + u_body[1:, :-1] + u_body[1:, 1:] + u_body[:-1, 1:])
+        mid_u /= np.maximum(np.linalg.norm(mid_u, axis=-1, keepdims=True), 1e-15)
+        mid_lat = np.degrees(np.arcsin(np.clip(mid_u[..., 2], -1.0, 1.0)))
+        mid_lon = np.degrees(np.arctan2(mid_u[..., 1], mid_u[..., 0]))
 
         normals[..., 0] += 0.045 * np.sin(mid_n * 55.0 - mid_e * 37.0)
         normals[..., 1] += 0.045 * np.cos(mid_n * 43.0 + mid_e * 61.0)
@@ -534,6 +516,11 @@ class LunarTerrain3D:
         self.normals_enu = normals
 
         self.quad_rgb = self.sample_surface_texture(mid_lat, mid_lon, mid_n, mid_e)
+
+        # Zaślepka środka (r < r0): jeden wielokąt, normalna i kolor uśrednione z pierścienia 0
+        cap_n = normals[0].mean(axis=0)
+        self.cap_normal = cap_n / max(float(np.linalg.norm(cap_n)), 1e-15)
+        self.cap_rgb = self.quad_rgb[0].mean(axis=0)
 
         # 2. Niezależny profil horyzontu topograficznego 360° (720 azymutów x 120 promieni do 450 km)
         delta_h = (self.hor_radii_km / R_MOON)[:, None]
@@ -581,7 +568,7 @@ class LunarTerrain3D:
                 "Observer_Elevation_km",
                 "Observer_Height_above_surface_m",
             ])
-            for idx in range(self.n_az):
+            for idx in range(self.n_hor_az):
                 writer.writerow([
                     f"{math.degrees(self.az_grid[idx]):.4f}",
                     f"{math.degrees(self.horizon_alt[idx]):.6f}",
@@ -707,6 +694,27 @@ class LunarTerrain3D:
                     # Uszczelnienie krawędzi 1 px zapobiega powstawaniu czarnych szczelin między czworokątami
                     pygame.draw.polygon(screen, c, poly, 1)
 
+        # Zaślepka środka siatki (pod obserwatorem), rysowana jako ostatnia
+        cap_clipped = _clip_poly_near(
+            [(float(x_cam[0, j]), float(y_cam[0, j]), float(z_cam[0, j])) for j in range(self.n_az)],
+            near_z,
+        )
+        if len(cap_clipped) >= 3:
+            cap_light = 165.0 * ambient + 940.0 * (max(0.0, float(self.cap_normal @ sun_enu)) ** 0.85) * sun_effective_vis
+            cap_c = (
+                int(np.clip(self.cap_rgb[0] * cap_light * red_tint, 5, 248)),
+                int(np.clip(self.cap_rgb[1] * cap_light * green_tint, 5, 248)),
+                int(np.clip(self.cap_rgb[2] * cap_light * blue_tint, 5, 248)),
+            )
+            cap_poly = [
+                (
+                    int(max(-16000.0, min(16000.0, half_cw + (vx / vz) * focal))),
+                    int(max(-16000.0, min(16000.0, half_ch - (vy / vz) * focal))),
+                )
+                for vx, vy, vz in cap_clipped
+            ]
+            pygame.draw.polygon(screen, cap_c, cap_poly)
+
         if show_horizon_line:
             h_pts = []
             for h_alt, h_az in zip(self.horizon_alt, self.az_grid):
@@ -824,7 +832,7 @@ def draw_telescopic_earth(screen, ex, ey, r_earth_exact, cw, ch,
     e_x_cam = cam_right - np.dot(cam_right, e_z_cam) * e_z_cam
     nx_norm = np.linalg.norm(e_x_cam)
     if nx_norm < 1e-6:
-        e_x_cam = np.cross(cam_up, e_z_cam)
+        e_x_cam = -np.cross(cam_up, e_z_cam)  # ENU lewoskrętny
         nx_norm = np.linalg.norm(e_x_cam)
     e_x_cam /= nx_norm
 
@@ -1209,10 +1217,13 @@ def get_topocentric_vectors(year_data, time_idx_float, lat_deg, lon_deg, obs_rad
     zeta_a = math.radians((2306.2181 * T_cent + 0.30188 * (T_cent ** 2)) / 3600.0)
     z_a = math.radians((2306.2181 * T_cent + 1.09468 * (T_cent ** 2)) / 3600.0)
     theta_a = math.radians((2004.3109 * T_cent - 0.42665 * (T_cent ** 2)) / 3600.0)
-    R_prec_icrf_to_mod = rot_z(-z_a) @ rot_y(theta_a) @ rot_z(-zeta_a)
+    # J2000 -> data (MOD): r_mod = R3(-z) R2(theta) R3(-zeta) r_J2000 w macierzach pasywnych;
+    # rot_* to rotacje aktywne, więc pasywne R3(a)=rot_z(-a), R2(a)=rot_y(-a).
+    R_prec_icrf_to_mod = rot_z(z_a) @ rot_y(-theta_a) @ rot_z(zeta_a)
 
     gmst = math.radians((280.46061837 + 360.98564736629 * d_j2000) % 360.0)
-    R_icrf_to_ecef = rot_z(gmst) @ R_prec_icrf_to_mod
+    # Transformacja pasywna (zmiana bazy): ECEF = R3(gmst) @ MOD = rot_z(-gmst) @ MOD
+    R_icrf_to_ecef = rot_z(-gmst) @ R_prec_icrf_to_mod
     R_ecl_to_ecef = R_icrf_to_ecef @ rot_x(EPS_J2000)
 
     ecef_axes_enu = (
