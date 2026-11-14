@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MODI 2026 · Symulacje</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/sim.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body class="sim-page">
+  <header class="toolbar">
+    <h1 class="brand">MODI 2026 <span>Symulacje</span></h1>
+    <nav class="mode-switch" aria-label="Tryb symulacji">
+      <button id="mode-surface" type="button" data-mode="surface" aria-pressed="false">Powierzchnia <small>newlunar</small></button>
+      <button id="mode-orbit" type="button" data-mode="orbit" aria-pressed="false">Orbita <small>neworb</small></button>
+    </nav>
+    <div class="controls">
+      <button id="sim-play-btn" type="button" aria-pressed="false">▶ Play</button>
+      <label>Czas UTC <input id="sim-time-input" type="datetime-local" step="60"></label>
+      <a class="back-link" href="/">← Strona główna</a>
+    </div>
+  </header>
+
+  <main class="sim-viewport">
+    <section id="mode-surface-root" class="sim-mode" data-mode="surface" hidden aria-label="Widok z powierzchni Księżyca"></section>
+    <section id="mode-orbit-root" class="sim-mode" data-mode="orbit" hidden aria-label="Symulator orbit"></section>
+    <p id="sim-error" class="sim-error" hidden></p>
+  </main>
+
+  <script type="module" src="/js/sim/main.js"></script>
+</body>
+</html>
