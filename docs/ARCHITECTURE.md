@@ -112,8 +112,10 @@ edge na NAS (publiczny TLS) → nginx na .3 (routing po `Host`) → `127.0.0.1:4
   go na `0.0.0.0`: Docker omija ufw, a na LAN ma być wystawione tylko 443 nginxa.
 - Nginx (edge `nginx/conf.d/35-lunarsims.conf`, .3 `lan-backend/lunarsims.conf`) i certyfikat
   (lineage `lunarsims`) żyją w repo bieldent, w `server/mainserv/`, nie tutaj.
-- Obraz nie zawiera kodu z wolumenów ani `--reload`. `Textures/` i `coords/` są montowane z checkoutu
-  tylko do odczytu, a kontener działa jako uid 65534 na read-only rootfs, więc pliki muszą mieć `o+r`.
+- Kod jest wbudowany w obraz (bez wolumenów z kodem) i działa bez `--reload`. `Textures/` i `coords/`
+  są montowane z checkoutu tylko do odczytu. Kontener działa jako uid 65534 na read-only rootfs, a `COPY`
+  zachowuje prawa z checkoutu, więc **cały** checkout musi być czytelny dla „others” (pliki `o+r`,
+  katalogi `o+rx`; klonuj z umask 022). Inaczej uvicorn nie zaimportuje `app.main` i kontener się restartuje.
 
 ```bash
 git pull && docker compose -f docker-compose.prod.yml up -d --build   # start i aktualizacja
