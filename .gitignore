@@ -13,3 +13,6 @@ venv/
 Textures/moon_dem.npy
 Textures/moon_albedo.npy
 Textures/moon_color.jpg
+
+Textures/moon_color_8k.tif
+Textures/moon_color_8k.png
