@@ -46,10 +46,7 @@
       event.preventDefault();
       event.stopImmediatePropagation();
 
-      const targetUrl = window.location.protocol === "file:"
-        ? "dwa_wykresy.html"
-        : "/dwa_wykresy.html";
-      window.location.assign(targetUrl);
+      window.location.assign("dwa wykresy.html");
     }, true);
   </script>
 </body>
