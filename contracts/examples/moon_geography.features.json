@@ -1,0 +1,26 @@
+{
+  "meta": {
+    "feature": "moon_geography",
+    "endpoint": "features",
+    "contract_version": "0.1.0",
+    "source": "example",
+    "frame": "MOON_BODY_FIXED",
+    "units": {"angle": "deg", "diameter": "km", "depth": "km", "height": "m"}
+  },
+  "features": [
+    {"id": "tycho", "name": "Tycho", "kind": "crater", "center": {"lat_deg": -43.31, "lon_deg": -11.36},
+     "diameter_km": 85.0, "depth_km": 4.8, "height_m": null},
+    {"id": "copernicus", "name": "Copernicus", "kind": "crater", "center": {"lat_deg": 9.62, "lon_deg": -20.08},
+     "diameter_km": 93.0, "depth_km": 3.8, "height_m": null},
+    {"id": "clavius", "name": "Clavius", "kind": "crater", "center": {"lat_deg": -58.62, "lon_deg": -14.73},
+     "diameter_km": 225.0, "depth_km": 3.5, "height_m": null},
+    {"id": "shackleton", "name": "Shackleton", "kind": "crater", "center": {"lat_deg": -89.67, "lon_deg": 129.78},
+     "diameter_km": 21.0, "depth_km": 4.2, "height_m": null},
+    {"id": "mons_huygens", "name": "Mons Huygens", "kind": "mountain", "center": {"lat_deg": 19.92, "lon_deg": -2.86},
+     "diameter_km": 40.0, "depth_km": null, "height_m": 5500.0},
+    {"id": "mons_hadley", "name": "Mons Hadley", "kind": "mountain", "center": {"lat_deg": 26.69, "lon_deg": 4.12},
+     "diameter_km": 25.0, "depth_km": null, "height_m": 4500.0},
+    {"id": "mare_imbrium", "name": "Mare Imbrium", "kind": "mare", "center": {"lat_deg": 32.8, "lon_deg": -15.6},
+     "diameter_km": 1145.0, "depth_km": null, "height_m": null}
+  ]
+}
