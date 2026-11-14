@@ -1,0 +1,36 @@
+# Produkcja: lunarsims.reachit.space na mainserv (192.168.0.3).
+# edge (NAS, TLS) -> nginx na .3 (vhost po Host) -> 127.0.0.1:4550 -> ten kontener.
+# Start/aktualizacja: git pull && docker compose -f docker-compose.prod.yml up -d --build
+name: lunarsims
+
+services:
+  lunarsims:
+    build: .
+    image: lunarsims:prod
+    container_name: lunarsims
+    restart: unless-stopped
+    # Tylko loopback: Docker omija ufw, a na LAN wystawione jest wyłącznie 443 nginxa na .3.
+    ports:
+      - "127.0.0.1:4550:8000"
+    volumes:
+      - ./Textures:/data/textures:ro
+      - ./coords:/data/coords:ro
+    # Bez --reload. '*' jest bezpieczne, bo port słucha tylko na loopbacku: nagłówki
+    # X-Forwarded-* może ustawić wyłącznie nginx z .3. Ruch przychodzi z bramy dockera (172.x),
+    # więc domyślne 127.0.0.1 by je ignorowało.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000",
+              "--proxy-headers", "--forwarded-allow-ips", "*"]
+    # Side project na wspólnym serwerze: bez roota, bez zapisu, bez capabilities.
+    user: "65534:65534"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

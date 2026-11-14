@@ -103,6 +103,24 @@ Bez Dockera: `cd backend && pip install -r requirements.txt && uvicorn app.main:
 Kontrakty można oglądać w `/docs` (schematy OpenAPI generowane z Pydantic), w `contracts/examples/`
 i na żywo w inspektorze na stronie.
 
+## Produkcja
+
+`https://lunarsims.reachit.space` działa na mainserv (192.168.0.3) z `docker-compose.prod.yml`:
+edge na NAS (publiczny TLS) → nginx na .3 (routing po `Host`) → `127.0.0.1:4550` → kontener `lunarsims` (`:8000`).
+
+- Port `127.0.0.1:4550` jest wpisany w vhost na .3. Nie zmieniaj go bez zmiany vhosta. Nigdy nie publikuj
+  go na `0.0.0.0`: Docker omija ufw, a na LAN ma być wystawione tylko 443 nginxa.
+- Nginx (edge `nginx/conf.d/35-lunarsims.conf`, .3 `lan-backend/lunarsims.conf`) i certyfikat
+  (lineage `lunarsims`) żyją w repo bieldent, w `server/mainserv/`, nie tutaj.
+- Obraz nie zawiera kodu z wolumenów ani `--reload`. `Textures/` i `coords/` są montowane z checkoutu
+  tylko do odczytu, a kontener działa jako uid 65534 na read-only rootfs, więc pliki muszą mieć `o+r`.
+
+```bash
+git pull && docker compose -f docker-compose.prod.yml up -d --build   # start i aktualizacja
+docker logs -f lunarsims                                              # logi (IP klienta z X-Forwarded-For)
+curl -s 127.0.0.1:4550/health                                         # {"status":"ok","features":7}
+```
+
 ## Jak sprawdzić, czy działa
 
 ```bash
