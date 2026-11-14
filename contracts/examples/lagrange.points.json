@@ -1,0 +1,36 @@
+{
+  "meta": {
+    "feature": "lagrange",
+    "endpoint": "points",
+    "contract_version": "0.1.0",
+    "source": "example",
+    "frame": "ECLIPTIC_J2000_GEOCENTRIC",
+    "units": {"distance": "km", "position_rotating": "earth_moon_distance"}
+  },
+  "t": "2026-01-01T00:00:00Z",
+  "mass_ratio": 0.012150585,
+  "earth_moon_distance_km": 361026.0,
+  "rotating_frame": {
+    "origin": "earth_moon_barycenter",
+    "x_axis": {"x": 0.399765, "y": 0.912388, "z": 0.087952},
+    "y_axis": {"x": -0.916148, "y": 0.400787, "z": 0.006499},
+    "z_axis": {"x": -0.029321, "y": -0.083175, "z": 0.996104}
+  },
+  "points": [
+    {"id": "L1", "position_km": {"x": 122542.0, "y": 279678.7, "z": 26960.4},
+     "position_rotating": {"x": 0.836915, "y": 0.0, "z": 0.0},
+     "distance_from_earth_km": 306534.8, "distance_from_moon_km": 54491.2, "stable": false},
+    {"id": "L2", "position_km": {"x": 168548.3, "y": 384679.2, "z": 37082.2},
+     "position_rotating": {"x": 1.155682, "y": 0.0, "z": 0.0},
+     "distance_from_earth_km": 421617.9, "distance_from_moon_km": 60591.9, "stable": false},
+    {"id": "L3", "position_km": {"x": -143302.8, "y": -327061.2, "z": -31527.9},
+     "position_rotating": {"x": -1.005063, "y": 0.0, "z": 0.0},
+     "distance_from_earth_km": 358467.2, "distance_from_moon_km": 719493.2, "stable": false},
+    {"id": "L4", "position_km": {"x": -214278.0, "y": 290006.9, "z": 17908.3},
+     "position_rotating": {"x": 0.487849, "y": 0.866025, "z": 0.0},
+     "distance_from_earth_km": 361026.0, "distance_from_moon_km": 361026.0, "stable": true},
+    {"id": "L5", "position_km": {"x": 358603.7, "y": 39388.9, "z": 13844.6},
+     "position_rotating": {"x": 0.487849, "y": -0.866025, "z": 0.0},
+     "distance_from_earth_km": 361026.0, "distance_from_moon_km": 361026.0, "stable": true}
+  ]
+}
