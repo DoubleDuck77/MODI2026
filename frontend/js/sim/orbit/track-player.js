@@ -65,6 +65,13 @@ export class TrackPlayer {
     return best;
   }
 
+  /** Usuwa próbki za głowicą (zostaje ostatnia ≤ t): ślad trzyma osobny bufor pierścieniowy. */
+  trimBefore(t) {
+    let k = 0;
+    while (k + 1 < this.samples.length && this.samples[k + 1].t <= t) k++;
+    if (k > 0) this.samples.splice(0, k);
+  }
+
   truncateAfter(t) {
     this.samples = this.samples.filter((s) => s.t <= t + 1e-9);
     this.status = 'ok';

@@ -11,6 +11,8 @@ i statusy HUD ``newlunar.py:2081-2091``.
 import base64
 import math
 import threading
+from collections import OrderedDict
+from contextlib import contextmanager
 
 import numpy as np
 from fastapi import HTTPException
@@ -34,6 +36,8 @@ DEM_FILE = "moon_dem_nasa_16ppd_v3.npy"
 COLOR_FILE = "moon_color_nasa_8k_v3.npy"
 DEM_SOURCE = "NASA LOLA 16 px/deg"  # ten sam opis co newlunar.py:160
 ALBEDO_SCALE = 0.3  # LUT newlunar: 0.055 + 0.22·v^1.15 ∈ [0.055, 0.275]
+LOCK_TIMEOUT_S = 1.0     # dłużej nie czekamy na zajęty teren — 503, klient ponawia
+OBSERVER_CACHE_SIZE = 64
 
 
 def _vec(v) -> tuple:
@@ -52,6 +56,10 @@ class LunarSurfaceFacade(BaseFacade):
         self.nl = import_root_script("newlunar", ctx.settings.scripts_dir)
         self._lock = threading.Lock()
         self._terrain_obj = None
+        # (lat, lon, eye) → dane obserwatora z update_observer: sky dla znanego obserwatora
+        # nie potrzebuje locka ani przeliczania okna.
+        self._observers: "OrderedDict[tuple, dict]" = OrderedDict()
+        self._observers_lock = threading.Lock()
 
     # --- pomocnicze ----------------------------------------------------------------------
 
@@ -73,6 +81,47 @@ class LunarSurfaceFacade(BaseFacade):
             color = np.load(color_path, mmap_mode="r")
             self._terrain_obj = self.nl.LunarTerrain3D(dem, color)
         return self._terrain_obj
+
+    @contextmanager
+    def _terrain_locked(self):
+        """Wyłączny dostęp do ``LunarTerrain3D`` z limitem czasu.
+
+        Budowa okna trwa sekundy (na biegunie do minuty), a klient porzucający żądanie nie przerywa
+        synchronicznego handlera — bez limitu porzucone żądania blokowałyby wątki serwera.
+        """
+        if not self._lock.acquire(timeout=LOCK_TIMEOUT_S):
+            raise HTTPException(503, "Teren jest właśnie przeliczany — spróbuj ponownie za chwilę",
+                                headers={"Retry-After": "1"})
+        try:
+            yield self._terrain()
+        finally:
+            self._lock.release()
+
+    def _observe(self, terrain, lat_deg: float, lon_deg: float, eye_height_m: float) -> dict:
+        """``update_observer`` z oknem zależnym tylko od bieżącego zapytania (wywoływać pod lockiem).
+
+        ``LunarTerrain3D`` używa ponownie okna zbudowanego dla wcześniejszego obserwatora, dopóki
+        je pokrywa — wtedy zagęszczenie ``sub`` zależy od historii. W pygame to historia jednego
+        użytkownika; na serwerze byłaby to historia wszystkich klientów. Okno budowane dla innej
+        wysokości oka (inny promień) jest więc odrzucane.
+        """
+        want_rad = terrain.WINDOW_MARGIN * terrain.horizon_range_km(eye_height_m / 1000.0)
+        if terrain.win is not None and abs(terrain.win["rad_km"] - want_rad) > 1e-9:
+            terrain.win = None
+            terrain.cached_lat = terrain.cached_lon = terrain.cached_eye_height_m = None
+        terrain.update_observer(lat_deg, lon_deg, eye_height_m=eye_height_m)
+        entry = {
+            "obs_radius_km": float(terrain.obs_radius_km),
+            "obs_elev_km": float(terrain.obs_elev_km),
+            "az_grid": terrain.az_grid,
+            "horizon_alt": np.array(terrain.horizon_alt, copy=True),
+        }
+        with self._observers_lock:
+            self._observers[(lat_deg, lon_deg, eye_height_m)] = entry
+            self._observers.move_to_end((lat_deg, lon_deg, eye_height_m))
+            while len(self._observers) > OBSERVER_CACHE_SIZE:
+                self._observers.popitem(last=False)
+        return entry
 
     def _cell_albedo(self, terrain, lat_deg, lon_deg, radii_km, daz_rad):
         """(n_r, n_az, 3) albedo — średnia z ``win["sat_a"]`` po kwadracie komórki (pod lockiem)."""
@@ -104,18 +153,23 @@ class LunarSurfaceFacade(BaseFacade):
         year_data = load_year(self.ctx.settings.coords_dir, year, nl.J2000)
         idx = min(idx, len(year_data["times"]) - 1)
 
-        with self._lock:
-            terrain = self._terrain()
-            terrain.update_observer(q.lat_deg, q.lon_deg, eye_height_m=q.eye_height_m)
-            data = nl.get_topocentric_vectors(
-                year_data, idx, q.lat_deg, q.lon_deg, obs_radius_km=terrain.obs_radius_km
-            )
-            earth_alt, earth_az, earth_dist = data["earth"]
-            sun_alt, sun_az, sun_dist = data["sun"]
-            earth_hor = terrain.get_horizon_at_azimuth(earth_az)
-            sun_hor = terrain.get_horizon_at_azimuth(sun_az)
-            obs_elev_km = terrain.obs_elev_km
-            obs_radius_km = terrain.obs_radius_km
+        key = (q.lat_deg, q.lon_deg, q.eye_height_m)
+        with self._observers_lock:
+            obs = self._observers.get(key)
+        if obs is None:
+            with self._terrain_locked() as terrain:
+                obs = self._observe(terrain, q.lat_deg, q.lon_deg, q.eye_height_m)
+        data = nl.get_topocentric_vectors(year_data, idx, q.lat_deg, q.lon_deg, obs_radius_km=obs["obs_radius_km"])
+        earth_alt, earth_az, earth_dist = data["earth"]
+        sun_alt, sun_az, sun_dist = data["sun"]
+
+        def horizon_at(az_rad: float) -> float:   # LunarTerrain3D.get_horizon_at_azimuth
+            return float(np.interp(az_rad % (2.0 * np.pi), obs["az_grid"], obs["horizon_alt"]))
+
+        earth_hor = horizon_at(earth_az)
+        sun_hor = horizon_at(sun_az)
+        obs_elev_km = obs["obs_elev_km"]
+        obs_radius_km = obs["obs_radius_km"]
 
         # --- newlunar.py:1965-1992 ---
         ang_earth = math.asin(min(1.0, nl.R_EARTH / earth_dist))
@@ -210,9 +264,8 @@ class LunarSurfaceFacade(BaseFacade):
         return StarField(meta=meta, ecliptic_xyz=[_vec(v) for v in stars_ecl], brightness=star_mags.tolist())
 
     def terrain(self, q: TerrainQuery) -> LunarTerrainPatch:
-        with self._lock:
-            terrain = self._terrain()
-            terrain.update_observer(q.lat_deg, q.lon_deg, eye_height_m=q.eye_height_m)
+        with self._terrain_locked() as terrain:
+            self._observe(terrain, q.lat_deg, q.lon_deg, q.eye_height_m)
 
             # Siatka biegunowa — te same próbki co profil horyzontu w update_observer
             # (newlunar.py:768-778): 480 promieni geometrycznie od 15 m do r_max × 720 azymutów.

@@ -166,12 +166,17 @@ export async function createOrbitMode({ root, api, endpoint, clock }) {
       netError = `Błąd backendu: ${err?.message ?? err}`;
     }
   }
+  // Parametry ostatniej własnej orbity: reset do nowej epoki (zmiana czasu w nagłówku) zachowuje
+  // orbitę użytkownika zamiast podmieniać ją na domyślne 100 km / 45°.
+  let lastCustom = null;
   const resetSim = (preset) => {
     if (preset && preset !== 'RESET') currentPreset = preset;
-    // get_preset_orbit("Custom") w neworb daje domyślną orbitę 100 km / 45° — to samo co CUSTOM bez pól
-    return setStateFrom(fetchInitial(currentPreset === 'Custom' ? 'CUSTOM' : currentPreset));
+    return setStateFrom(currentPreset === 'Custom'
+      ? fetchInitial('CUSTOM', lastCustom ?? undefined)
+      : fetchInitial(currentPreset));
   };
   const applyCustom = (alt, inc, speed) => {
+    lastCustom = [alt, inc, speed];
     currentPreset = 'Custom';
     customDialog = false;
     return setStateFrom(fetchInitial('CUSTOM', [alt, inc, speed]));
@@ -335,6 +340,7 @@ export async function createOrbitMode({ root, api, endpoint, clock }) {
     if (target > timeElapsed) {
       player.advanceHistory(target, R_MOON, R_ESCAPE);
       timeElapsed = target;
+      player.trimBefore(timeElapsed);
       const st = player.sampleAt(timeElapsed);
       historyAlt.push(norm(st.pos) - R_MOON);
       historyVel.push(norm(inertialVelocity(st.pos, st.vel)));
@@ -637,6 +643,7 @@ export async function createOrbitMode({ root, api, endpoint, clock }) {
   const ro = new ResizeObserver(resize);
 
   let started = false;
+  let pausedOnLeave = false;
   root._debug = {
     camera, player, slider, perf,
     /** Synchroniczny pomiar kosztu klatki (render + gl.finish), niezależny od dławienia rAF. */
@@ -662,12 +669,14 @@ export async function createOrbitMode({ root, api, endpoint, clock }) {
         epochMs = clock.t;
         paused = false;
         resetSim('LRO');
-      } else if (Math.abs(clock.t - (epochMs + timeElapsed * 1000)) > 1000) {
-        epochMs = clock.t;   // czas zmieniony w innym trybie → nowa epoka jak --epoch
-        paused = !clock.playing;
-        resetSim();
       } else {
-        paused = !clock.playing;
+        paused = pausedOnLeave;
+        if (Math.abs(clock.t - (epochMs + timeElapsed * 1000)) > 1000) {
+          epochMs = clock.t;   // czas zmieniony w innym trybie → nowa epoka jak --epoch
+          resetSim();
+        } else {
+          syncClock();
+        }
       }
       lastFrame = 0;
       raf = requestAnimationFrame(frame);
@@ -678,6 +687,10 @@ export async function createOrbitMode({ root, api, endpoint, clock }) {
       window.removeEventListener('keydown', onKey);
       clock.removeEventListener('timechange', onTime);
       clock.removeEventListener('playstatechange', onPlay);
+      // Zegar strony grał w tempie orbity; drugi tryb startuje zatrzymany (jak newlunar),
+      // a po powrocie orbita wraca do swojego stanu pauzy.
+      pausedOnLeave = paused;
+      if (clock.playing) { selfClock = true; clock.pause(); selfClock = false; }
     },
   };
 }

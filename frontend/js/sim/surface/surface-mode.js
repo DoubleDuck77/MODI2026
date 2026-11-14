@@ -71,6 +71,10 @@ function makeSlider(parent, { label, min, max, value, power = 1, isInt = false, 
     },
     onInput: null,
   };
+  // Suwak nie zatrzymuje fokusu (w pygame suwaki nie przejmują klawiatury): po puszczeniu
+  // myszy skróty (spacja, 1–5, E, S…) działają od razu.
+  input.addEventListener('change', () => input.blur());
+  input.addEventListener('pointerup', () => input.blur());
   input.addEventListener('input', () => {
     const v = s.min + Number(input.value) ** s.power * (s.max - s.min);
     s.value = s.isInt ? Math.round(v) : v;
@@ -178,7 +182,11 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
 
   const obsKey = () => `${sLat.value}|${sLon.value}|${sHeight.value}`;
 
+  let obsChangedAt = 0;
+  let skyInflightObs = null;
+
   function observerChanged() {
+    obsChangedAt = performance.now();
     clearTimeout(terrainTimer);
     terrainTimer = setTimeout(loadTerrain, TERRAIN_DEBOUNCE_MS);
   }
@@ -188,6 +196,8 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
     const ctrl = new AbortController();
     terrainAbort = ctrl;
     terrainLoading = true;
+    const reqObs = obsKey();
+    let retrying = false;
     try {
       const p = await api.getJson(endpoint('lunar_surface.terrain'), observer(), { signal: ctrl.signal });
       if (ctrl.signal.aborted) return;
@@ -202,21 +212,37 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
       sky.setHorizon(p.horizon);
       rebuildHorizonLine();
     } catch (err) {
-      if (err?.name !== 'AbortError') setStatus(`Błąd terenu: ${err?.message ?? err}`);
+      if (err?.name === 'AbortError') return;
+      // 503: teren przeliczany dla innego zapytania — ponów, jeśli obserwator się nie zmienił
+      if (err?.status === 503 && reqObs === obsKey()) {
+        retrying = true;
+        clearTimeout(terrainTimer);
+        terrainTimer = setTimeout(loadTerrain, 1000);
+        return;
+      }
+      setStatus(`Błąd terenu: ${err?.message ?? err}`);
     } finally {
-      if (terrainAbort === ctrl) terrainLoading = false;
+      if (terrainAbort === ctrl && !retrying) terrainLoading = false;
     }
   }
 
+  /**
+   * Niebo: jedno żądanie naraz. Zmiana czasu nie przerywa żądania w locie — po odpowiedzi
+   * następna klatka pyta o bieżący czas. Przerywamy tylko przy zmianie obserwatora, a o nowego
+   * obserwatora pytamy dopiero, gdy przestanie się zmieniać (jak debounce terenu).
+   */
   function maybeFetchSky(now) {
-    const key = `${clock.t}|${obsKey()}`;
+    const reqObs = obsKey();
+    if (skyAbort && skyInflightObs !== reqObs) { skyAbort.abort(); skyAbort = null; }
+    if (skyAbort) return;
+    if (now - obsChangedAt < TERRAIN_DEBOUNCE_MS) return;
+    const key = `${clock.t}|${reqObs}`;
     if (key === skyReqKey || now - skyLastReq < SKY_MIN_INTERVAL_MS) return;
     skyReqKey = key;
     skyLastReq = now;
-    skyAbort?.abort();
     const ctrl = new AbortController();
     skyAbort = ctrl;
-    const reqObs = obsKey();
+    skyInflightObs = reqObs;
     const t = new Date(clock.t).toISOString();
     api.getJson(endpoint('lunar_surface.sky'), { t, ...observer() }, { signal: ctrl.signal })
       .then((s) => {
@@ -227,7 +253,12 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
         skyCurr = s;
         skyObsKey = reqObs;
       })
-      .catch((err) => { if (err?.name !== 'AbortError') setStatus(`Błąd nieba: ${err?.message ?? err}`); });
+      .catch((err) => {
+        if (err?.name === 'AbortError') return;
+        skyReqKey = '';   // 503 / błąd sieci: ponów po SKY_MIN_INTERVAL_MS
+        if (err?.status !== 503) setStatus(`Błąd nieba: ${err?.message ?? err}`);
+      })
+      .finally(() => { if (skyAbort === ctrl) skyAbort = null; });
   }
 
   // Obrót Ziemi między próbkami nieba: osie ECEF obracają się wokół osi Z z szybkością GMST
