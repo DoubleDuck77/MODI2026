@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "feature": "moon_illumination",
+    "endpoint": "state",
+    "contract_version": "0.1.0",
+    "source": "example",
+    "frame": "MOON_BODY_FIXED",
+    "units": {"angle": "deg", "shadow_length": "km"}
+  },
+  "t": "2026-01-01T00:00:00Z",
+  "sun_dir_body": {"x": 0.823945, "y": 0.566282, "z": 0.020942},
+  "earth_dir_body": {"x": 0.998227, "y": 0.031371, "z": -0.050593},
+  "subsolar_point": {"lat_deg": 1.2, "lon_deg": 34.5},
+  "sub_earth_point": {"lat_deg": -2.9, "lon_deg": 1.8},
+  "terminator": [
+    {"lat_deg": 0.0, "lon_deg": 124.5},
+    {"lat_deg": 44.99, "lon_deg": 125.7},
+    {"lat_deg": 88.8, "lon_deg": -145.5},
+    {"lat_deg": 44.99, "lon_deg": -56.7},
+    {"lat_deg": 0.0, "lon_deg": -55.5},
+    {"lat_deg": -44.99, "lon_deg": -54.3},
+    {"lat_deg": -88.8, "lon_deg": 34.5},
+    {"lat_deg": -44.99, "lon_deg": 123.3}
+  ],
+  "shadows": [
+    {"feature_id": "tycho", "sun_elevation_deg": 29.49, "shadow_length_km": 8.5, "in_shadow": false},
+    {"feature_id": "copernicus", "sun_elevation_deg": 35.08, "shadow_length_km": 5.4, "in_shadow": false},
+    {"feature_id": "clavius", "sun_elevation_deg": 18.79, "shadow_length_km": 10.3, "in_shadow": false},
+    {"feature_id": "shackleton", "sun_elevation_deg": -1.23, "shadow_length_km": null, "in_shadow": true}
+  ]
+}

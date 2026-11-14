@@ -1,0 +1,32 @@
+{
+  "meta": {
+    "feature": "earth_appearance",
+    "endpoint": "state",
+    "contract_version": "0.1.0",
+    "source": "example",
+    "frame": "EARTH_BODY_FIXED",
+    "units": {"angle": "deg", "rate": "deg/h", "altitude": "km"}
+  },
+  "t": "2026-01-01T00:00:00Z",
+  "axial_tilt_deg": 23.4393,
+  "rotation": {"angle_deg": 100.6608, "rate_deg_per_hour": 15.041067},
+  "clouds": {
+    "texture": {"url": "/textures/earth_clouds8K.jpg", "width": 8192, "height": 4096, "format": "jpg"},
+    "angle_deg": 42.0,
+    "rate_deg_per_hour": 15.2,
+    "altitude_km": 8.0
+  },
+  "subsolar_point": {"lat_deg": -23.01, "lon_deg": -179.17},
+  "day_texture": {"url": "/textures/earth_day8K.jpg", "width": 8192, "height": 4096, "format": "jpg"},
+  "night_texture": {"url": "/textures/earrth_night8K.jpg", "width": 8192, "height": 4096, "format": "jpg"},
+  "city_lights": {
+    "on_below_sun_elevation_deg": -6.0,
+    "fade_deg": 6.0,
+    "cities": [
+      {"name": "Warszawa", "location": {"lat_deg": 52.2297, "lon_deg": 21.0122}, "sun_elevation_deg": -56.94, "lights_on": true},
+      {"name": "Stalowa Wola", "location": {"lat_deg": 50.5826, "lon_deg": 22.0532}, "sun_elevation_deg": -57.86, "lights_on": true},
+      {"name": "Nowy Jork", "location": {"lat_deg": 40.7128, "lon_deg": -74.006}, "sun_elevation_deg": -25.94, "lights_on": true},
+      {"name": "Tokio", "location": {"lat_deg": 35.6762, "lon_deg": 139.6503}, "sun_elevation_deg": 19.56, "lights_on": false}
+    ]
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "meta": {
+    "feature": "moon_geography",
+    "endpoint": "terrain",
+    "contract_version": "0.1.0",
+    "source": "example",
+    "frame": "MOON_BODY_FIXED",
+    "units": {"radius": "km", "height": "m", "angle": "deg"}
+  },
+  "radius_km": 1737.4,
+  "projection": "equirectangular",
+  "lon_origin_deg": -180.0,
+  "color_map": {"url": "/textures/moon_texture8K.jpg", "width": 8192, "height": 4096, "format": "jpg"},
+  "color_map_preview": {"url": "/textures/moon_texture.jpg", "width": 2048, "height": 1024, "format": "jpg"},
+  "height_map": null,
+  "normal_map": null,
+  "height_range_m": [-9100.0, 10786.0]
+}

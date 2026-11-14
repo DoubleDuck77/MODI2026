@@ -1,0 +1,23 @@
+{
+  "meta": {
+    "feature": "ephemeris",
+    "endpoint": "state",
+    "contract_version": "0.1.0",
+    "source": "example",
+    "frame": "ECLIPTIC_J2000_GEOCENTRIC",
+    "units": {"distance": "km", "angle": "deg"}
+  },
+  "t": "2026-01-01T00:00:00Z",
+  "sun_km": {"x": 26072138.448, "y": -144774673.821, "z": 8892.862},
+  "moon_km": {"x": 144325.727, "y": 329395.831, "z": 31752.976},
+  "earth_moon_distance_km": 361026.0,
+  "earth_sun_distance_km": 147103578.0,
+  "elongation_deg": 145.8,
+  "moon_phase": {
+    "phase_angle_deg": 34.121,
+    "illuminated_fraction": 0.9139,
+    "waxing": true,
+    "name": "waxing_gibbous"
+  },
+  "earth_illuminated_fraction_from_moon": 0.0861
+}

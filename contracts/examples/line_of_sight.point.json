@@ -1,0 +1,18 @@
+{
+  "meta": {
+    "feature": "line_of_sight",
+    "endpoint": "point",
+    "contract_version": "0.1.0",
+    "source": "example",
+    "frame": "TOPOCENTRIC_HORIZON",
+    "units": {"angle": "deg", "distance": "km"}
+  },
+  "t": "2026-01-01T00:00:00Z",
+  "observer": {"lat_deg": 0.0, "lon_deg": 0.0},
+  "earth": {"alt_deg": 86.59, "az_deg": 148.2, "distance_km": 359290.0},
+  "horizon_elevation_deg": 1.37,
+  "clearance_deg": 85.22,
+  "visible_disk_fraction": 1.0,
+  "earth_visible": true,
+  "blocked_by": null
+}
