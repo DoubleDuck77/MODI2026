@@ -322,103 +322,13 @@ def _clip_poly_near(verts, near_z: float):
     return out
 
 
-def build_clipmap_mesh(n_half=14, r0_km=0.035, n_levels=15):
-    """
-    Buduje bezszwową, izotropową siatkę Geometry Clipmap w układzie stycznym (North_km, East_km):
-    - Poziom 0: jednorodna siatka (2*n_half) x (2*n_half) identycznych kwadratów 2.5 m x 2.5 m
-      na obszarze [-35 m, +35 m]^2 (zero zbiegania się linii, zero krzyża długich pasów).
-    - Poziomy 1..n_levels-1: koncentryczne pierścienie kwadratowe o podwajającym się kroku
-      aż do ±573.4 km, połączone wachlarzami 3 trójkątów na granicach 2:1 (brak T-junctions).
-    """
-    assert n_half % 2 == 0
-    verts = []
-    vert_map = {}
-
-    def get_vert(n_int, e_int, scale_km):
-        key = (n_int, e_int)
-        idx = vert_map.get(key)
-        if idx is None:
-            idx = len(verts)
-            vert_map[key] = idx
-            verts.append((n_int * scale_km, e_int * scale_km))
-        return idx
-
-    def add_tri(a, b, c):
-        na, ea = verts[a]
-        nb, eb = verts[b]
-        nc, ec = verts[c]
-        uz = (nc - na) * (eb - ea) - (ec - ea) * (nb - na)
-        if uz < 0.0:
-            tris.append((a, c, b))
-        else:
-            tris.append((a, b, c))
-
-    quads = []
-    tris = []
-    base_unit_km = r0_km / n_half
-
-    for i in range(-n_half, n_half):
-        for j in range(-n_half, n_half):
-            v00 = get_vert(i, j, base_unit_km)
-            v10 = get_vert(i + 1, j, base_unit_km)
-            v11 = get_vert(i + 1, j + 1, base_unit_km)
-            v01 = get_vert(i, j + 1, base_unit_km)
-            quads.append((v00, v10, v11, v01))
-
-    for lvl in range(1, n_levels):
-        step = 1 << lvl
-        half_span = n_half * step
-        inner_span = half_span // 2
-
-        for i in range(-half_span, half_span, step):
-            for j in range(-half_span, half_span, step):
-                if -inner_span <= i < inner_span and -inner_span <= j < inner_span:
-                    continue
-
-                v00 = get_vert(i, j, base_unit_km)
-                v10 = get_vert(i + step, j, base_unit_km)
-                v11 = get_vert(i + step, j + step, base_unit_km)
-                v01 = get_vert(i, j + step, base_unit_km)
-
-                touches_south = (i + step == -inner_span) and (-inner_span <= j < inner_span)
-                touches_north = (i == inner_span) and (-inner_span <= j < inner_span)
-                touches_west = (j + step == -inner_span) and (-inner_span <= i < inner_span)
-                touches_east = (j == inner_span) and (-inner_span <= i < inner_span)
-
-                if touches_south:
-                    vm = get_vert(i + step, j + step // 2, base_unit_km)
-                    add_tri(v00, v10, vm)
-                    add_tri(v00, vm, v01)
-                    add_tri(vm, v11, v01)
-                elif touches_north:
-                    vm = get_vert(i, j + step // 2, base_unit_km)
-                    add_tri(v00, v10, vm)
-                    add_tri(v10, v11, vm)
-                    add_tri(v11, v01, vm)
-                elif touches_west:
-                    vm = get_vert(i + step // 2, j + step, base_unit_km)
-                    add_tri(v00, v10, vm)
-                    add_tri(v00, vm, v01)
-                    add_tri(v10, v11, vm)
-                elif touches_east:
-                    vm = get_vert(i + step // 2, j, base_unit_km)
-                    add_tri(v00, vm, v01)
-                    add_tri(vm, v10, v11)
-                    add_tri(vm, v11, v01)
-                else:
-                    quads.append((v00, v10, v11, v01))
-
-    return (
-        np.array(verts, dtype=np.float64),
-        np.array(tris, dtype=np.int32),
-        np.array(quads, dtype=np.int32),
-    )
-
-
 class LunarTerrain3D:
     """
-    Model 3D powierzchni Księżyca z izotropową siatką Geometry Clipmap
-    odwzorowaną na kulę R_MOON + DEM oraz dokładnym sortowaniem głębokości 3D.
+    Model 3D powierzchni Księżyca oparty na jednorodnej siatce samych czworokątów
+    (przekształcenie Fonga–Shirleya z kwadratu [-1, 1]^2 na dysk horyzontu 450 km):
+    - Zero trójkątów przejściowych, zero T-junctions, zero osobliwości biegunowej,
+    - Kwadraty 2.5 m x 2.5 m przy obserwatorze płynnie przechodzące w okrągły horyzont,
+    - Ścisłe sortowanie koncentrycznymi pierścieniami od horyzontu do obserwatora.
     """
 
     def __init__(self, dem_km: np.ndarray, albedo_rgb: np.ndarray):
@@ -427,29 +337,50 @@ class LunarTerrain3D:
         self.albedo_map = albedo_rgb
         self.AH, self.AW = albedo_rgb.shape[:2]
 
-        # Izotropowa siatka Geometry Clipmap (10 584 wielokątów o proporcjach ~1:1 od 2.5 m do 573 km)
-        verts_ne, tris, quads = build_clipmap_mesh(n_half=14, r0_km=0.035, n_levels=15)
-        self.verts_n = verts_ne[:, 0]
-        self.verts_e = verts_ne[:, 1]
-        self.n_quads = len(quads)
-        self.n_tris = len(tris)
+        # 120 x 120 = 14 400 czystych czworokątów
+        self.n_cells = 120
+        self.n_half = self.n_cells // 2
+        u_1d = np.linspace(-1.0, 1.0, self.n_cells + 1)
+        U, V = np.meshgrid(u_1d, u_1d, indexing="ij")
 
-        # Zunifikowana tablica indeksów wielokątów (P, 4) — dla trójkątów 4. wierzchołek powiela 3.
-        self.poly_idx = np.vstack([
-            quads,
-            np.column_stack([tris, tris[:, 2]]),
-        ])
-        self.is_tri = np.zeros(len(self.poly_idx), dtype=bool)
-        self.is_tri[self.n_quads:] = True
+        # Przekształcenie Fonga-Shirleya: kwadrat [-1, 1]^2 -> koło jednostkowe
+        Xd = U * np.sqrt(np.maximum(0.0, 1.0 - 0.5 * (V * V)))
+        Yd = V * np.sqrt(np.maximum(0.0, 1.0 - 0.5 * (U * U)))
 
-        s_verts = np.hypot(self.verts_n, self.verts_e)
-        delta_verts = s_verts / R_MOON
-        self.cos_delta_v = np.cos(delta_verts)
-        self.sinc_over_R_v = np.where(
-            s_verts > 1e-12,
-            np.sin(delta_verts) / np.maximum(s_verts, 1e-12),
+        rho = np.hypot(Xd, Yd)
+        r_linear_km = 0.15
+        r_max_km = 450.0
+        r_km = r_linear_km * rho + (r_max_km - r_linear_km) * (rho ** 4.5)
+        scale = np.where(rho > 1e-12, r_km / np.maximum(rho, 1e-12), r_linear_km)
+
+        self.N_grid = Xd * scale
+        self.E_grid = Yd * scale
+        self.s_grid = r_km
+        self.delta_grid = self.s_grid / R_MOON
+        self.cos_delta_grid = np.cos(self.delta_grid)
+        self.sinc_over_R = np.where(
+            self.s_grid > 1e-12,
+            np.sin(self.delta_grid) / np.maximum(self.s_grid, 1e-12),
             1.0 / R_MOON,
         )
+
+        # Wstępnie wyliczona kolejność kafelków od najdalszego pierścienia (shell=59) do centrum (shell=0)
+        shells = []
+        for shell in range(self.n_half - 1, -1, -1):
+            lo = self.n_half - 1 - shell
+            hi = self.n_half + shell
+            ring_cells = []
+            if lo == hi:
+                ring_cells.append((lo, lo))
+            else:
+                for j in range(lo, hi + 1):
+                    ring_cells.append((lo, j))
+                    ring_cells.append((hi, j))
+                for i in range(lo + 1, hi):
+                    ring_cells.append((i, lo))
+                    ring_cells.append((i, hi))
+            shells.append(ring_cells)
+        self.shell_order = shells
 
         # Niezależny raycasting 360° do wyznaczania profilu horyzontu topograficznego
         self.hor_radii_km = np.geomspace(0.02, 450.0, 120)
@@ -461,8 +392,7 @@ class LunarTerrain3D:
         self.cached_eye_height_m = None
         self.pts_enu = None
         self.normals_enu = None
-        self.poly_rgb = None
-        self.poly_dist_sq = None
+        self.quad_rgb = None
         self.horizon_alt = None
         self.horizon_dist_km = None
         self.horizon_lat = None
@@ -471,7 +401,7 @@ class LunarTerrain3D:
         self.obs_elev_km = 0.0
         self.obs_radius_km = R_MOON
 
-    def sample_dem_bilinear(self, lat_deg: np.ndarray, lon_deg: np.ndarray) -> np.ndarray:
+    def sample_dem_bilinear(self, lat_deg: np.ndarray, lon_deg: np.ndarray, detail_atten: np.ndarray = None) -> np.ndarray:
         fy = np.clip((90.0 - lat_deg) / 180.0 * (self.H - 1), 0.0, self.H - 1.0001)
         lon_wrapped = ((lon_deg + 180.0) % 360.0) - 180.0
         fx = (lon_wrapped + 180.0) / 360.0 * self.W
@@ -492,10 +422,12 @@ class LunarTerrain3D:
         lat_r = np.radians(lat_deg)
         lon_r = np.radians(lon_wrapped)
         detail = (
-            0.032 * np.sin(lat_r * 950.0) * np.cos(lon_r * 950.0)
-            + 0.014 * np.sin(lat_r * 2600.0 + 1.1) * np.sin(lon_r * 2600.0 - 0.7)
-            + 0.005 * np.cos(lat_r * 7200.0 - lon_r * 6400.0)
+            0.028 * np.sin(lat_r * 950.0) * np.cos(lon_r * 950.0)
+            + 0.012 * np.sin(lat_r * 2600.0 + 1.1) * np.sin(lon_r * 2600.0 - 0.7)
+            + 0.004 * np.cos(lat_r * 7200.0 - lon_r * 6400.0)
         )
+        if detail_atten is not None:
+            detail = detail * detail_atten
         return base_h + detail
 
     def sample_surface_texture(self, lat_deg: np.ndarray, lon_deg: np.ndarray, rel_n: np.ndarray, rel_e: np.ndarray) -> np.ndarray:
@@ -556,70 +488,52 @@ class LunarTerrain3D:
         north0 = np.cross(up0, east0)
         obs_body = self.obs_radius_km * up0
 
-        # 1. Odwzorowanie wierzchołków Geometry Clipmap na sferę Księżyca R_MOON + DEM
+        # 1. Odwzorowanie siatki czworokątów na kulę Księżyca R_MOON + DEM
         u_body = (
-            self.cos_delta_v[:, None] * up0[None, :]
-            + (self.verts_n * self.sinc_over_R_v)[:, None] * north0[None, :]
-            + (self.verts_e * self.sinc_over_R_v)[:, None] * east0[None, :]
+            self.cos_delta_grid[..., None] * up0[None, None, :]
+            + (self.N_grid * self.sinc_over_R)[..., None] * north0[None, None, :]
+            + (self.E_grid * self.sinc_over_R)[..., None] * east0[None, None, :]
         )
 
-        v_lat = np.degrees(np.arcsin(np.clip(u_body[:, 2], -1.0, 1.0)))
-        v_lon = np.degrees(np.arctan2(u_body[:, 1], u_body[:, 0]))
+        v_lat = np.degrees(np.arcsin(np.clip(u_body[..., 2], -1.0, 1.0)))
+        v_lon = np.degrees(np.arctan2(u_body[..., 1], u_body[..., 0]))
 
-        h_verts = self.sample_dem_bilinear(v_lat, v_lon)
-        r_verts = R_MOON + h_verts
+        detail_atten = np.exp(-self.s_grid / 12.0)
+        h_grid = self.sample_dem_bilinear(v_lat, v_lon, detail_atten=detail_atten)
+        r_grid = R_MOON + h_grid
 
-        p_body = r_verts[:, None] * u_body
-        rel_body = p_body - obs_body[None, :]
+        p_body = r_grid[..., None] * u_body
+        rel_body = p_body - obs_body[None, None, :]
 
         rel_n = rel_body @ north0
         rel_e = rel_body @ east0
         rel_u = rel_body @ up0
-        self.pts_enu = np.column_stack([rel_n, rel_e, rel_u])
+        self.pts_enu = np.stack([rel_n, rel_e, rel_u], axis=-1)
 
-        # Wektory wierzchołków każdego wielokąta (P, 4, 3)
-        p0 = self.pts_enu[self.poly_idx[:, 0]]
-        p1 = self.pts_enu[self.poly_idx[:, 1]]
-        p2 = self.pts_enu[self.poly_idx[:, 2]]
-        p3 = self.pts_enu[self.poly_idx[:, 3]]
+        # Normalne powierzchni dla czworokątów (skierowane ku +Up)
+        p00 = self.pts_enu[:-1, :-1]
+        p10 = self.pts_enu[1:, :-1]
+        p11 = self.pts_enu[1:, 1:]
+        p01 = self.pts_enu[:-1, 1:]
 
-        # Środki wielokątów i kwadrat odległości 3D od obserwatora (do sortowania malarskiego)
-        poly_center = np.where(
-            self.is_tri[:, None],
-            (p0 + p1 + p2) / 3.0,
-            0.25 * (p0 + p1 + p2 + p3),
-        )
-        self.poly_dist_sq = np.einsum("ij,ij->i", poly_center, poly_center)
-
-        # Normalne powierzchni (skierowane ku +Up) dla czworokątów i trójkątów przejściowych
-        normals_quad = np.cross(p2 - p0, p3 - p1)
-        normals_tri = np.cross(p2 - p0, p1 - p0)
-        normals = np.where(self.is_tri[:, None], normals_tri, normals_quad)
+        normals = np.cross(p11 - p00, p01 - p10)
         normals /= np.maximum(np.linalg.norm(normals, axis=-1, keepdims=True), 1e-15)
 
         relief_gain = 1.85
-        normals[:, 0] *= relief_gain
-        normals[:, 1] *= relief_gain
+        normals[..., 0] *= relief_gain
+        normals[..., 1] *= relief_gain
 
-        mid_n = poly_center[:, 0]
-        mid_e = poly_center[:, 1]
-        mid_lat = np.where(
-            self.is_tri,
-            (v_lat[self.poly_idx[:, 0]] + v_lat[self.poly_idx[:, 1]] + v_lat[self.poly_idx[:, 2]]) / 3.0,
-            0.25 * (v_lat[self.poly_idx[:, 0]] + v_lat[self.poly_idx[:, 1]] + v_lat[self.poly_idx[:, 2]] + v_lat[self.poly_idx[:, 3]]),
-        )
-        mid_lon = np.where(
-            self.is_tri,
-            (v_lon[self.poly_idx[:, 0]] + v_lon[self.poly_idx[:, 1]] + v_lon[self.poly_idx[:, 2]]) / 3.0,
-            0.25 * (v_lon[self.poly_idx[:, 0]] + v_lon[self.poly_idx[:, 1]] + v_lon[self.poly_idx[:, 2]] + v_lon[self.poly_idx[:, 3]]),
-        )
+        mid_n = 0.25 * (rel_n[:-1, :-1] + rel_n[1:, :-1] + rel_n[1:, 1:] + rel_n[:-1, 1:])
+        mid_e = 0.25 * (rel_e[:-1, :-1] + rel_e[1:, :-1] + rel_e[1:, 1:] + rel_e[:-1, 1:])
+        mid_lat = 0.25 * (v_lat[:-1, :-1] + v_lat[1:, :-1] + v_lat[1:, 1:] + v_lat[:-1, 1:])
+        mid_lon = 0.25 * (v_lon[:-1, :-1] + v_lon[1:, :-1] + v_lon[1:, 1:] + v_lon[:-1, 1:])
 
-        normals[:, 0] += 0.045 * np.sin(mid_n * 55.0 - mid_e * 37.0)
-        normals[:, 1] += 0.045 * np.cos(mid_n * 43.0 + mid_e * 61.0)
+        normals[..., 0] += 0.045 * np.sin(mid_n * 55.0 - mid_e * 37.0)
+        normals[..., 1] += 0.045 * np.cos(mid_n * 43.0 + mid_e * 61.0)
         normals /= np.maximum(np.linalg.norm(normals, axis=-1, keepdims=True), 1e-15)
         self.normals_enu = normals
 
-        self.poly_rgb = self.sample_surface_texture(mid_lat, mid_lon, mid_n, mid_e)
+        self.quad_rgb = self.sample_surface_texture(mid_lat, mid_lon, mid_n, mid_e)
 
         # 2. Niezależny profil horyzontu topograficznego 360° (720 azymutów x 120 promieni do 450 km)
         delta_h = (self.hor_radii_km / R_MOON)[:, None]
@@ -631,7 +545,7 @@ class LunarTerrain3D:
         )
         h_lat = np.degrees(np.arcsin(np.clip(u_hor[..., 2], -1.0, 1.0)))
         h_lon = np.degrees(np.arctan2(u_hor[..., 1], u_hor[..., 0]))
-        h_elev = self.sample_dem_bilinear(h_lat, h_lon)
+        h_elev = self.sample_dem_bilinear(h_lat, h_lon, detail_atten=np.exp(-self.hor_radii_km / 12.0)[:, None])
         r_hor = R_MOON + h_elev
 
         rel_hor = r_hor[..., None] * u_hor - obs_body[None, None, :]
@@ -711,13 +625,12 @@ class LunarTerrain3D:
         sx = half_cw + (x_cam / safe_z) * focal
         sy = half_ch - (y_cam / safe_z) * focal
 
-        # Oświetlenie wielokątów
         sun_enu = np.array([
             math.cos(sun_alt) * math.cos(sun_az),
             math.cos(sun_alt) * math.sin(sun_az),
             math.sin(sun_alt),
         ])
-        ndotl = self.normals_enu @ sun_enu
+        ndotl = np.einsum("ijk,k->ij", self.normals_enu, sun_enu)
         direct = np.power(np.maximum(0.0, ndotl), 0.85) * sun_effective_vis
         earthshine = 0.045 * max(0.0, math.sin(earth_alt))
         ambient = 0.032 + earthshine
@@ -727,80 +640,72 @@ class LunarTerrain3D:
         green_tint = 1.0 - 0.15 * eclipse_red_glow
         blue_tint = 1.0 - 0.35 * eclipse_red_glow
 
-        lit_rgb = np.empty(self.poly_rgb.shape, dtype=np.uint8)
-        lit_rgb[:, 0] = np.clip(self.poly_rgb[:, 0] * base_light * red_tint, 5, 248)
-        lit_rgb[:, 1] = np.clip(self.poly_rgb[:, 1] * base_light * green_tint, 5, 248)
-        lit_rgb[:, 2] = np.clip(self.poly_rgb[:, 2] * base_light * blue_tint, 5, 248)
+        lit_rgb = np.empty(self.quad_rgb.shape, dtype=np.uint8)
+        lit_rgb[..., 0] = np.clip(self.quad_rgb[..., 0] * base_light * red_tint, 5, 248)
+        lit_rgb[..., 1] = np.clip(self.quad_rgb[..., 1] * base_light * green_tint, 5, 248)
+        lit_rgb[..., 2] = np.clip(self.quad_rgb[..., 2] * base_light * blue_tint, 5, 248)
 
-        # Wektorowy frustum culling + sortowanie malarskie od najdalszych do najbliższych
-        pz = z_cam[self.poly_idx]
-        all_in_front = np.all(pz > near_z, axis=1)
-        any_in_front = np.any(pz > near_z, axis=1)
-
-        px_all = sx[self.poly_idx]
-        py_all = sy[self.poly_idx]
         margin = 90.0
-        on_screen_fast = (
-            (np.max(px_all, axis=1) >= -margin)
-            & (np.min(px_all, axis=1) <= cw + margin)
-            & (np.max(py_all, axis=1) >= -margin)
-            & (np.min(py_all, axis=1) <= ch + margin)
-        )
-        visible_mask = (all_in_front & on_screen_fast) | (any_in_front & (~all_in_front))
-        vis_indices = np.nonzero(visible_mask)[0]
-        sorted_indices = vis_indices[np.argsort(-self.poly_dist_sq[vis_indices])]
 
-        poly_idx = self.poly_idx
-        is_tri = self.is_tri
+        # Rysowanie koncentrycznymi pierścieniami od zewnętrznego horyzontu do środka
+        for ring_cells in self.shell_order:
+            for i, j in ring_cells:
+                z00 = z_cam[i, j]
+                z10 = z_cam[i + 1, j]
+                z11 = z_cam[i + 1, j + 1]
+                z01 = z_cam[i, j + 1]
 
-        for p_i in sorted_indices:
-            i0, i1, i2, i3 = poly_idx[p_i]
-            c = (int(lit_rgb[p_i, 0]), int(lit_rgb[p_i, 1]), int(lit_rgb[p_i, 2]))
+                if z00 <= near_z and z10 <= near_z and z11 <= near_z and z01 <= near_z:
+                    continue
 
-            if all_in_front[p_i]:
-                if is_tri[p_i]:
+                if z00 > near_z and z10 > near_z and z11 > near_z and z01 > near_z:
+                    px00, py00 = sx[i, j], sy[i, j]
+                    px10, py10 = sx[i + 1, j], sy[i + 1, j]
+                    px11, py11 = sx[i + 1, j + 1], sy[i + 1, j + 1]
+                    px01, py01 = sx[i, j + 1], sy[i, j + 1]
+
+                    if (
+                        max(px00, px10, px11, px01) < -margin
+                        or min(px00, px10, px11, px01) > cw + margin
+                        or max(py00, py10, py11, py01) < -margin
+                        or min(py00, py10, py11, py01) > ch + margin
+                    ):
+                        continue
+
                     poly = [
-                        (int(sx[i0]), int(sy[i0])),
-                        (int(sx[i1]), int(sy[i1])),
-                        (int(sx[i2]), int(sy[i2])),
+                        (int(px00), int(py00)),
+                        (int(px10), int(py10)),
+                        (int(px11), int(py11)),
+                        (int(px01), int(py01)),
                     ]
                 else:
-                    poly = [
-                        (int(sx[i0]), int(sy[i0])),
-                        (int(sx[i1]), int(sy[i1])),
-                        (int(sx[i2]), int(sy[i2])),
-                        (int(sx[i3]), int(sy[i3])),
-                    ]
-            else:
-                verts_3d = (
-                    [
-                        (float(x_cam[i0]), float(y_cam[i0]), float(z_cam[i0])),
-                        (float(x_cam[i1]), float(y_cam[i1]), float(z_cam[i1])),
-                        (float(x_cam[i2]), float(y_cam[i2]), float(z_cam[i2])),
-                    ]
-                    if is_tri[p_i]
-                    else [
-                        (float(x_cam[i0]), float(y_cam[i0]), float(z_cam[i0])),
-                        (float(x_cam[i1]), float(y_cam[i1]), float(z_cam[i1])),
-                        (float(x_cam[i2]), float(y_cam[i2]), float(z_cam[i2])),
-                        (float(x_cam[i3]), float(y_cam[i3]), float(z_cam[i3])),
-                    ]
-                )
-                clipped = _clip_poly_near(verts_3d, near_z)
-                if len(clipped) < 3:
-                    continue
-                poly = [
-                    (
-                        int(max(-16000.0, min(16000.0, half_cw + (vx / vz) * focal))),
-                        int(max(-16000.0, min(16000.0, half_ch - (vy / vz) * focal))),
+                    clipped = _clip_poly_near(
+                        [
+                            (float(x_cam[i, j]), float(y_cam[i, j]), float(z00)),
+                            (float(x_cam[i + 1, j]), float(y_cam[i + 1, j]), float(z10)),
+                            (float(x_cam[i + 1, j + 1]), float(y_cam[i + 1, j + 1]), float(z11)),
+                            (float(x_cam[i, j + 1]), float(y_cam[i, j + 1]), float(z01)),
+                        ],
+                        near_z,
                     )
-                    for vx, vy, vz in clipped
-                ]
+                    if len(clipped) < 3:
+                        continue
+                    poly = [
+                        (
+                            int(max(-16000.0, min(16000.0, half_cw + (vx / vz) * focal))),
+                            int(max(-16000.0, min(16000.0, half_ch - (vy / vz) * focal))),
+                        )
+                        for vx, vy, vz in clipped
+                    ]
 
-            pygame.draw.polygon(screen, c, poly)
-            if wireframe:
-                ec = (min(255, c[0] + 35), min(255, c[1] + 35), min(255, c[2] + 40))
-                pygame.draw.polygon(screen, ec, poly, 1)
+                c = (int(lit_rgb[i, j, 0]), int(lit_rgb[i, j, 1]), int(lit_rgb[i, j, 2]))
+                pygame.draw.polygon(screen, c, poly)
+                if wireframe:
+                    ec = (min(255, c[0] + 35), min(255, c[1] + 35), min(255, c[2] + 40))
+                    pygame.draw.polygon(screen, ec, poly, 1)
+                else:
+                    # Uszczelnienie krawędzi 1 px zapobiega powstawaniu czarnych szczelin między czworokątami
+                    pygame.draw.polygon(screen, c, poly, 1)
 
         if show_horizon_line:
             h_pts = []
@@ -882,7 +787,7 @@ def draw_telescopic_earth(screen, ex, ey, r_earth_exact, cw, ch,
                           ecef_axes_enu, cloud_offset,
                           eclipse_ring_factor=0.0, dark_side_exposure=1.0,
                           day_arr=None, night_mips=None, clouds_arr=None):
-    """Wektorowy renderer tarczy Ziemi 3D z ciemną stroną nocną, zaćmieniami i obrotem W->E."""
+    """Wektorowy renderer tarczy Ziemi 3D z poprawną orientacją N-S/W-E, ciemną nocą i zaćmieniami."""
     r_earth = max(6.5, r_earth_exact)
     pad = int(max(4, r_earth * 0.14))
     r_outer = r_earth + pad
@@ -912,6 +817,9 @@ def draw_telescopic_earth(screen, ex, ey, r_earth_exact, cw, ch,
     gz = np.zeros_like(dist_sq)
     gz[mask] = np.sqrt(1.0 - dist_sq[mask])
 
+    # Baza ekranowa tarczy Ziemi w układzie ENU obserwatora:
+    # e_z_cam wskazuje od Ziemi ku obserwatorowi, e_x_cam w prawo (+cam_right), e_y_cam w górę (+cam_up).
+    # Nie używamy np.cross w ENU, ponieważ [North, East, Up] jest lewoskrętny.
     e_z_cam = -dir_earth_enu
     e_x_cam = cam_right - np.dot(cam_right, e_z_cam) * e_z_cam
     nx_norm = np.linalg.norm(e_x_cam)
@@ -919,12 +827,20 @@ def draw_telescopic_earth(screen, ex, ey, r_earth_exact, cw, ch,
         e_x_cam = np.cross(cam_up, e_z_cam)
         nx_norm = np.linalg.norm(e_x_cam)
     e_x_cam /= nx_norm
-    e_y_cam = np.cross(e_z_cam, e_x_cam)
+
+    e_y_cam = cam_up - np.dot(cam_up, e_z_cam) * e_z_cam
+    e_y_cam -= np.dot(e_y_cam, e_x_cam) * e_x_cam
+    ny_norm = np.linalg.norm(e_y_cam)
+    if ny_norm < 1e-6:
+        e_y_cam = -np.cross(e_z_cam, e_x_cam)
+        ny_norm = np.linalg.norm(e_y_cam)
+    e_y_cam /= ny_norm
 
     gx_m = gx[mask][:, None]
     gy_m = gy[mask][:, None]
     gz_m = gz[mask][:, None]
 
+    # Zewnętrzny wektor normalny powierzchni kuli ziemskiej w układzie ENU (gy < 0 to góra ekranu)
     n_enu = gx_m * e_x_cam[None, :] - gy_m * e_y_cam[None, :] + gz_m * e_z_cam[None, :]
 
     x_ecef, y_ecef, z_ecef = ecef_axes_enu
@@ -1670,7 +1586,7 @@ def main():
             if 0 <= sx + r_label + 6 < cw and 0 <= sy - 8 < ch:
                 screen.blit(font.render("Słońce", True, (255, 230, 150)), (sx + r_label + 6, sy - 8))
 
-        # 4. ZIEMIA (poprawna orientacja geograficzna, obrót W->E, ciemna noc, zaćmienia)
+        # 4. ZIEMIA (poprawna orientacja N-S/W-E, obrót W->E, ciemna noc, zaćmienia)
         earth_proj = project_point(earth_alt, earth_az, cw, ch, cam_basis)
         if earth_proj:
             ex, ey, z_cam, focal = earth_proj
@@ -1692,7 +1608,7 @@ def main():
             if 0 <= ex + r_elabel + 8 < cw and 0 <= ey - 8 < ch:
                 screen.blit(font.render("Ziemia", True, (130, 200, 255)), (ex + r_elabel + 8, ey - 8))
 
-        # 5. MODEL 3D TEKSTUROWANEJ POWIERZCHNI KSIĘŻYCA (GEOMETRY CLIPMAP + SORT 3D)
+        # 5. MODEL 3D TEKSTUROWANEJ POWIERZCHNI KSIĘŻYCA (SIATKA CZWOROKĄTÓW SQUIRCLE)
         terrain_3d.draw_3d(
             screen, cw, ch, cam_alt, cam_az, fov,
             sun_alt, sun_az, earth_alt,
