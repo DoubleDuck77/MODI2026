@@ -7,6 +7,8 @@ services:
       - ./backend:/srv/backend
       - ./contracts:/srv/contracts
       - ./frontend:/srv/frontend
+      - ./newlunar.py:/srv/newlunar.py:ro
+      - ./neworb.py:/srv/neworb.py:ro
       - ./Textures:/data/textures:ro
       - ./coords:/data/coords:ro
     command: >

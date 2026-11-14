@@ -13,6 +13,7 @@ class Settings:
     frontend_dir: Path
     textures_dir: Path
     coords_dir: Path
+    scripts_dir: Path  # katalog z root-skryptami (newlunar.py, neworb.py)
 
     @property
     def examples_dir(self) -> Path:
@@ -28,4 +29,5 @@ class Settings:
             frontend_dir=path("MODI_FRONTEND_DIR", "frontend"),
             textures_dir=path("MODI_TEXTURES_DIR", "Textures"),
             coords_dir=path("MODI_COORDS_DIR", "coords"),
+            scripts_dir=path("MODI_SCRIPTS_DIR", "."),
         )
