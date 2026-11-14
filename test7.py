@@ -139,12 +139,27 @@ def generate_fallback_lunar_albedo(dem_km: np.ndarray) -> np.ndarray:
 
 
 def load_or_download_lunar_maps():
-    """Wczytuje lub pobiera globalną mapę wysokości (DEM) oraz mapę tekstury albedo Księżyca."""
+    """Wczytuje lub pobiera globalną mapę wysokości (DEM) oraz mapę tekstury albedo Księżyca.
+
+    Priorytet: NASA LOLA 16 px/deg + kolor LROC 8K (cache v3, mmap). Kolor uint8 wraca surowy,
+    a krzywa albedo jest nakładana przez LUT tylko na wycinek mapy (LunarTerrain3D._build_window).
+    """
     os.makedirs("Textures", exist_ok=True)
     dem_cache = os.path.join("Textures", "moon_dem.npy")
     dem_img = os.path.join("Textures", "moon_dem.jpg")
     alb_cache = os.path.join("Textures", "moon_albedo.npy")
     alb_img = os.path.join("Textures", "moon_color.jpg")
+
+    dem_v3 = os.path.join("Textures", "moon_dem_nasa_16ppd_v3.npy")
+    color_v3 = os.path.join("Textures", "moon_color_nasa_8k_v3.npy")
+    if os.path.exists(dem_v3) and os.path.exists(color_v3):
+        try:
+            dem = np.load(dem_v3, mmap_mode="r")
+            color_u8 = np.load(color_v3, mmap_mode="r")
+            if dem.ndim == 2 and color_u8.ndim == 3 and color_u8.shape[2] == 3:
+                return dem, color_u8, "NASA LOLA 16 px/deg"
+        except Exception as e:
+            print(f"[OSTRZEŻENIE] Nie udało się wczytać map v3: {e}")
 
     if os.path.exists(dem_cache):
         dem = np.load(dem_cache)
@@ -301,77 +316,86 @@ def horizon_visible_fraction(sun_alt: float, hor_alt: float, r_sun: float) -> fl
     return 0.5 + (x * math.sqrt(max(0.0, 1.0 - x * x)) + math.asin(x)) / math.pi
 
 
-def _clip_poly_near(verts, near_z: float):
-    """Przycina wielokąt 3D w układzie kamery [(x, y, z), ...] do płaszczyzny z >= near_z."""
-    out = []
-    n = len(verts)
-    for idx in range(n):
-        x1, y1, z1 = verts[idx]
-        x2, y2, z2 = verts[(idx + 1) % n]
-        in1 = z1 >= near_z
-        in2 = z2 >= near_z
-        if in1 and in2:
-            out.append((x2, y2, z2))
-        elif in1 and not in2:
-            t = (near_z - z1) / (z2 - z1)
-            out.append((x1 + t * (x2 - x1), y1 + t * (y2 - y1), near_z))
-        elif not in1 and in2:
-            t = (near_z - z1) / (z2 - z1)
-            out.append((x1 + t * (x2 - x1), y1 + t * (y2 - y1), near_z))
-            out.append((x2, y2, z2))
+def _clip_poly_frustum(verts, near_z: float, gx: float, gy: float):
+    """Przycina wielokąt 3D w układzie kamery [(x, y, z), ...] do z >= near_z oraz do ostrosłupa
+    |x| <= gx·z, |y| <= gy·z (z marginesem ekranu). Rzut wyniku jest ograniczony, więc nie trzeba
+    obcinać współrzędnych ekranu osobno w x i y (to zmieniało kierunek krawędzi)."""
+    planes = (
+        (0.0, 0.0, 1.0, -near_z),
+        (-1.0, 0.0, gx, 0.0),
+        (1.0, 0.0, gx, 0.0),
+        (0.0, -1.0, gy, 0.0),
+        (0.0, 1.0, gy, 0.0),
+    )
+    out = list(verts)
+    for px, py, pz, pw in planes:
+        if len(out) < 3:
+            return []
+        src_poly = out
+        out = []
+        n = len(src_poly)
+        for idx in range(n):
+            x1, y1, z1 = src_poly[idx]
+            x2, y2, z2 = src_poly[(idx + 1) % n]
+            d1 = px * x1 + py * y1 + pz * z1 + pw
+            d2 = px * x2 + py * y2 + pz * z2 + pw
+            if d1 >= 0.0 and d2 >= 0.0:
+                out.append((x2, y2, z2))
+            elif d1 >= 0.0 > d2 or d2 >= 0.0 > d1:
+                t = d1 / (d1 - d2)
+                out.append((x1 + t * (x2 - x1), y1 + t * (y2 - y1), z1 + t * (z2 - z1)))
+                if d2 >= 0.0:
+                    out.append((x2, y2, z2))
     return out
 
 
 class LunarTerrain3D:
     """
-    Model 3D powierzchni Księżyca oparty na jednorodnej siatce samych czworokątów
-    (siatka log-polarna o stałych proporcjach 1:1, od 2.5 m do horyzontu 450 km):
-    - Zero trójkątów przejściowych i T-junctions; komórki są kwadratami na każdym dystansie,
-    - Kwadraty 2.5 m x 2.5 m przy obserwatorze, rosnące geometrycznie aż do okrągłego horyzontu,
-    - Ścisłe sortowanie koncentrycznymi pierścieniami od horyzontu do obserwatora.
+    Model 3D powierzchni Księżyca na siatce kartograficznej DEM (lat/lon):
+    - Wierzchołki to punkty pomiarowe DEM (piksel jako obszar): węzeł (r, c) leży na
+      lat = 90 − (r+0.5)·180/H, lon = −180 + (c+0.5)·360/W i ma wysokość dokładnie dem[r, c] (bez szumu).
+      Ściany to komórki DEM. Bieguny domykają wirtualne wiersze węzłów na ±90°, kolumny są cykliczne.
+    - Wokół obserwatora budowane jest okno siatki (w układzie ciała) z normalnymi komórek oraz albedo
+      uśrednionym po obszarze komórki w mapie barwnej; tablice sum częściowych (SAT) dają średnią
+      normalną i średnie albedo dowolnego prostokąta komórek w O(1) (mipmapping pudełkowy).
+    - Co klatkę metryczne drzewo czwórkowe (podział anizotropowy) wybiera liście tak, by miały
+      ok. τ px na ekranie; narożniki liści zawsze leżą w punktach DEM, a T-junctions między liśćmi
+      różnej wielkości są zszywane przez przesunięcie węzła na krawędź większego sąsiada.
     """
+
+    ROOT = 128
+    TAU_PX = 6.0
+    MAX_QUADS = 18000
+    RELIEF_GAIN = 1.85
+    WINDOW_MARGIN = 1.25
+    N_HOR_RAYS = 240
 
     def __init__(self, dem_km: np.ndarray, albedo_rgb: np.ndarray):
         self.dem = dem_km
         self.H, self.W = dem_km.shape
         self.albedo_map = albedo_rgb
         self.AH, self.AW = albedo_rgb.shape[:2]
+        self.albedo_is_u8 = albedo_rgb.dtype == np.uint8
+        # Ta sama krzywa, którą test7 zamienia kolor 8-bit na albedo
+        self.albedo_lut = 0.055 + 0.22 * np.power(np.arange(256, dtype=np.float64) / 255.0, 1.15)
 
-        # Siatka log-polarna: Δr/r = Δθ  =>  każda komórka to (lokalnie) kwadrat 1:1 o kątach 90°
-        self.n_az = 72
-        r0_km = 0.0025
-        r_max_km = 450.0
-        dtheta = 2.0 * math.pi / self.n_az
-        self.n_rings = int(round(math.log(r_max_km / r0_km) / dtheta))
-        q = (r_max_km / r0_km) ** (1.0 / self.n_rings)
-        r_1d = r0_km * q ** np.arange(self.n_rings + 1)
-        th_1d = np.linspace(0.0, 2.0 * math.pi, self.n_az + 1)  # szew zduplikowany
-        R_g, TH_g = np.meshgrid(r_1d, th_1d, indexing="ij")
+        H = self.H
+        # Rozszerzone wiersze węzłów: 0 = biegun N (+90°), 1..H = wiersze DEM, H+1 = biegun S (−90°)
+        self.lat_e = np.empty(H + 2, dtype=np.float64)
+        self.lat_e[0] = 90.0
+        self.lat_e[1:H + 1] = 90.0 - (np.arange(H) + 0.5) * 180.0 / H
+        self.lat_e[H + 1] = -90.0
+        self._re_axis = np.arange(H + 2, dtype=np.float64)
+        self.pole_h = (float(np.mean(dem_km[0], dtype=np.float64)), float(np.mean(dem_km[H - 1], dtype=np.float64)))
 
-        self.N_grid = R_g * np.cos(TH_g)
-        self.E_grid = R_g * np.sin(TH_g)
-        self.s_grid = R_g
-        self.delta_grid = self.s_grid / R_MOON
-        self.cos_delta_grid = np.cos(self.delta_grid)
-        self.sinc_over_R = np.sin(self.delta_grid) / self.s_grid
-
-        # Kolejność malarska: pierścienie od najdalszego (horyzont) do najbliższego
-        self.shell_order = [
-            [(i, j) for j in range(self.n_az)]
-            for i in range(self.n_rings - 1, -1, -1)
-        ]
-
-        # Niezależny raycasting 360° do wyznaczania profilu horyzontu topograficznego
-        self.hor_radii_km = np.geomspace(0.02, 450.0, 120)
+        # Profil horyzontu topograficznego 360°
         self.az_grid = np.linspace(0.0, 2.0 * np.pi, 721)
-        self.n_hor_az = len(self.az_grid) - 1
+        self.n_az = len(self.az_grid) - 1
 
+        self.win = None
         self.cached_lat = None
         self.cached_lon = None
         self.cached_eye_height_m = None
-        self.pts_enu = None
-        self.normals_enu = None
-        self.quad_rgb = None
         self.horizon_alt = None
         self.horizon_dist_km = None
         self.horizon_lat = None
@@ -379,71 +403,207 @@ class LunarTerrain3D:
         self.horizon_elev_km = None
         self.obs_elev_km = 0.0
         self.obs_radius_km = R_MOON
+        self.eye_km = 0.002
+        self.r_max_km = 450.0
+        self.up0 = np.array([0.0, 0.0, 1.0])
+        self.east0 = np.array([0.0, 1.0, 0.0])
+        self.north0 = np.array([1.0, 0.0, 0.0])
+        self.obs_body = np.array([0.0, 0.0, R_MOON])
+        self.obs_cell = (0, 0)
+        self.quad_count = 0
+        self.drawn_count = 0
+        self.lod_tau = self.TAU_PX
+        self.lod_tau_used = self.TAU_PX
 
-    def sample_dem_bilinear(self, lat_deg: np.ndarray, lon_deg: np.ndarray, detail_atten: np.ndarray = None) -> np.ndarray:
-        fy = np.clip((90.0 - lat_deg) / 180.0 * (self.H - 1), 0.0, self.H - 1.0001)
-        lon_wrapped = ((lon_deg + 180.0) % 360.0) - 180.0
-        fx = (lon_wrapped + 180.0) / 360.0 * self.W
+    # --- Konwencja węzłów DEM ---------------------------------------------------------------
+    def _lat_to_re(self, lat_deg):
+        """Ułamkowy indeks rozszerzonego wiersza węzłów dla szerokości lat_deg."""
+        return np.interp(-np.asarray(lat_deg, dtype=np.float64), -self.lat_e, self._re_axis)
 
-        y0 = np.floor(fy).astype(np.int32)
-        x0 = np.floor(fx).astype(np.int32) % self.W
-        y1 = np.minimum(y0 + 1, self.H - 1)
+    def _lon_to_c(self, lon_deg):
+        """Ułamkowy (cykliczny) indeks kolumny węzłów dla długości lon_deg, w zakresie [0, W)."""
+        return np.mod((np.asarray(lon_deg, dtype=np.float64) + 180.0) * self.W / 360.0 - 0.5, self.W)
+
+    def _node_h(self, re, c):
+        """Wysokość (km) węzłów o całkowitych indeksach (re rozszerzony, c globalny)."""
+        r = np.clip(re - 1, 0, self.H - 1)
+        h = np.asarray(self.dem[r, c], dtype=np.float64)
+        h = np.where(re <= 0, self.pole_h[0], h)
+        return np.where(re >= self.H + 1, self.pole_h[1], h)
+
+    def sample_dem_bilinear(self, lat_deg: np.ndarray, lon_deg: np.ndarray) -> np.ndarray:
+        """Dwuliniowa interpolacja wysokości (km) na siatce węzłów DEM (bez szumu proceduralnego)."""
+        fy = self._lat_to_re(lat_deg)
+        fx = self._lon_to_c(lon_deg)
+        y0 = np.minimum(np.floor(fy).astype(np.int64), self.H)
+        x0f = np.floor(fx)
+        x0 = x0f.astype(np.int64) % self.W
         x1 = (x0 + 1) % self.W
-
+        y1 = y0 + 1
         wy = fy - y0
-        wx = fx - np.floor(fx)
-
-        base_h = (
-            (self.dem[y0, x0] * (1.0 - wx) + self.dem[y0, x1] * wx) * (1.0 - wy)
-            + (self.dem[y1, x0] * (1.0 - wx) + self.dem[y1, x1] * wx) * wy
+        wx = fx - x0f
+        return (
+            (self._node_h(y0, x0) * (1.0 - wx) + self._node_h(y0, x1) * wx) * (1.0 - wy)
+            + (self._node_h(y1, x0) * (1.0 - wx) + self._node_h(y1, x1) * wx) * wy
         )
 
-        lat_r = np.radians(lat_deg)
-        lon_r = np.radians(lon_wrapped)
-        detail = (
-            0.028 * np.sin(lat_r * 950.0) * np.cos(lon_r * 950.0)
-            + 0.012 * np.sin(lat_r * 2600.0 + 1.1) * np.sin(lon_r * 2600.0 - 0.7)
-            + 0.004 * np.cos(lat_r * 7200.0 - lon_r * 6400.0)
-        )
-        if detail_atten is not None:
-            detail = detail * detail_atten
-        return base_h + detail
+    def sample_dem_mesh(self, lat_deg: np.ndarray, lon_deg: np.ndarray) -> np.ndarray:
+        """Wysokość (km) na rysowanej siatce: komórka DEM = 2 trójkąty z przekątną 00-11 (interpolacja barycentryczna)."""
+        fy = self._lat_to_re(lat_deg)
+        fx = self._lon_to_c(lon_deg)
+        y0 = np.minimum(np.floor(fy).astype(np.int64), self.H)
+        x0f = np.floor(fx)
+        x0 = x0f.astype(np.int64) % self.W
+        x1 = (x0 + 1) % self.W
+        y1 = y0 + 1
+        u = fy - y0
+        v = fx - x0f
+        h00 = self._node_h(y0, x0)
+        h11 = self._node_h(y1, x1)
+        lower = u >= v
+        h_side = np.where(lower, self._node_h(y1, x0), self._node_h(y0, x1))
+        a = np.where(lower, u, v)
+        b = np.where(lower, v, u)
+        return h00 + a * (h_side - h00) + b * (h11 - h_side)
 
-    def sample_surface_texture(self, lat_deg: np.ndarray, lon_deg: np.ndarray, rel_n: np.ndarray, rel_e: np.ndarray) -> np.ndarray:
-        """Próbkuje teksturę globalną Księżyca + wieloskalową fakturę regolitu i skał."""
-        fy = np.clip((90.0 - lat_deg) / 180.0 * (self.AH - 1), 0.0, self.AH - 1.0001)
-        lon_wrapped = ((lon_deg + 180.0) % 360.0) - 180.0
-        fx = (lon_wrapped + 180.0) / 360.0 * self.AW
+    @staticmethod
+    def _sat(a: np.ndarray) -> np.ndarray:
+        """SAT (float64) kanałów a[k, i, j] -> s[k, i, j] z zerowym pierwszym wierszem i kolumną."""
+        s = np.zeros((a.shape[0], a.shape[1] + 1, a.shape[2] + 1), dtype=np.float64)
+        np.cumsum(a, axis=1, dtype=np.float64, out=s[:, 1:, 1:])
+        np.cumsum(s[:, 1:, 1:], axis=2, out=s[:, 1:, 1:])
+        return s
 
-        y0 = np.floor(fy).astype(np.int32)
-        x0 = np.floor(fx).astype(np.int32) % self.AW
-        y1 = np.minimum(y0 + 1, self.AH - 1)
-        x1 = (x0 + 1) % self.AW
+    @staticmethod
+    def _rect_mean(s: np.ndarray, r0, c0, r1, c1) -> np.ndarray:
+        """Średnia kanałów po prostokątach komórek [r0, r1) x [c0, c1) z SAT s[k, i, j] -> (N, k)."""
+        tot = s[:, r1, c1] - s[:, r0, c1] - s[:, r1, c0] + s[:, r0, c0]
+        return (tot / ((r1 - r0) * (c1 - c0))).T
 
-        wy = (fy - y0)[..., None]
-        wx = (fx - np.floor(fx))[..., None]
+    def _cell_albedo(self, R0, R1, C0, ncols):
+        """Albedo komórek okna (3, nrows, ncols) = średnia po ich ułamkowym obszarze w mapie barwnej.
 
-        base_rgb = (
-            (self.albedo_map[y0, x0] * (1.0 - wx) + self.albedo_map[y0, x1] * wx) * (1.0 - wy)
-            + (self.albedo_map[y1, x0] * (1.0 - wx) + self.albedo_map[y1, x1] * wx) * wy
-        )
+        Całka z mapy stałej na pikselach jest odcinkowo liniowa w każdej osi, więc liczymy ją
+        rozdzielnie: skumulowana suma wzdłuż x próbkowana w granicach komórek, potem wzdłuż y.
+        """
+        AH, AW = self.AH, self.AW
+        ys = (90.0 - self.lat_e[R0:R1 + 1]) / 180.0 * AH
+        xs = (C0 + np.arange(ncols + 1) + 0.5) * AW / self.W
+        py0 = max(0, int(math.floor(ys[0])))
+        py1 = max(min(AH, int(math.ceil(ys[-1]))), py0 + 1)
+        px0 = int(math.floor(xs[0]))
+        px1 = max(int(math.ceil(xs[-1])), px0 + 1)
+        ly = np.clip(ys - py0, 0.0, py1 - py0)
+        lx = xs - px0
+        iy = np.minimum(np.floor(ly).astype(np.int64), py1 - py0 - 1)
+        wy = (ly - iy)[:, None]
+        ix = np.minimum(np.floor(lx).astype(np.int64), px1 - px0 - 1)
+        wx = (lx - ix)[None, :]
+        area = np.maximum(np.diff(ly)[:, None] * np.diff(lx)[None, :], 1e-12)
 
-        lat_r = np.radians(lat_deg)
-        lon_r = np.radians(lon_wrapped)
-        macro_tex = (
-            0.12 * np.sin(lat_r * 520.0 + 0.4) * np.cos(lon_r * 520.0 - 0.6)
-            + 0.09 * np.cos(lat_r * 1650.0 - lon_r * 1420.0)
-        )
-        micro_tex = (
-            0.14 * np.sin(rel_n * 42.0 + rel_e * 31.0) * np.cos(rel_n * 24.0 - rel_e * 49.0)
-            + 0.10 * np.sin(rel_n * 130.0 - rel_e * 112.0)
-            + 0.07 * np.cos(rel_n * 310.0 + rel_e * 275.0)
-        )
-        dist_km = np.hypot(rel_n, rel_e)
-        micro_weight = np.exp(-dist_km / 3.0)
+        rows = np.asarray(self.albedo_map[py0:py1])
+        cols = np.arange(px0, px1) % AW
+        lut32 = self.albedo_lut.astype(np.float32)
+        out = np.empty((3, R1 - R0, ncols), dtype=np.float64)
+        for ch in range(3):
+            block = np.take(rows[:, :, ch], cols, axis=1)
+            block = lut32[block] if self.albedo_is_u8 else block.astype(np.float32)
+            cx = np.zeros((block.shape[0], block.shape[1] + 1), dtype=np.float32)
+            np.cumsum(block, axis=1, out=cx[:, 1:])
+            fx = cx[:, ix] * (1.0 - wx) + cx[:, ix + 1] * wx
+            strip = np.diff(fx, axis=1).astype(np.float64)
+            cy = np.zeros((strip.shape[0] + 1, strip.shape[1]), dtype=np.float64)
+            np.cumsum(strip, axis=0, out=cy[1:])
+            fy = cy[iy] * (1.0 - wy) + cy[iy + 1] * wy
+            out[ch] = np.diff(fy, axis=0) / area
+        return out
 
-        tex_factor = np.clip(1.0 + macro_tex + micro_tex * micro_weight, 0.50, 1.55)
-        return base_rgb * tex_factor[..., None]
+    def _build_window(self, lat_deg: float, lon_deg: float, r_max_km: float):
+        """Wycina okno siatki DEM wokół obserwatora i liczy (raz) węzły 3D, normalne, albedo i SAT."""
+        H, W, RT = self.H, self.W, self.ROOT
+        rad_km = self.WINDOW_MARGIN * r_max_km
+        delta_deg = math.degrees(rad_km / R_MOON)
+        lat_top = lat_deg + delta_deg
+        lat_bot = lat_deg - delta_deg
+
+        re_top = float(self._lat_to_re(min(90.0, lat_top)))
+        re_bot = float(self._lat_to_re(max(-90.0, lat_bot)))
+        R0 = max(0, int(math.floor(re_top / RT)) * RT)
+        R1 = min(H + 1, int(math.ceil(re_bot / RT)) * RT)
+
+        # Dokładna połowa rozpiętości długości czapy kulistej o promieniu δ: asin(sin δ / cos φ)
+        sin_d = math.sin(math.radians(min(90.0, delta_deg)))
+        cos_phi = math.cos(math.radians(lat_deg))
+        full = lat_top >= 90.0 or lat_bot <= -90.0 or sin_d >= cos_phi
+        if not full:
+            half_lon = math.degrees(math.asin(sin_d / cos_phi))
+        if not full:
+            c_lo = (lon_deg - half_lon + 180.0) * W / 360.0 - 0.5
+            c_hi = (lon_deg + half_lon + 180.0) * W / 360.0 - 0.5
+            C0 = int(math.floor(c_lo / RT)) * RT
+            ncols = int(math.ceil(c_hi / RT)) * RT - C0
+            full = ncols >= W
+        if full:
+            C0, ncols = 0, W
+
+        re_nodes = np.arange(R0, R1 + 1)
+        cols_g = (C0 + np.arange(ncols + 1)) % W
+        inner = (re_nodes >= 1) & (re_nodes <= H)
+        h = np.empty((len(re_nodes), ncols + 1), dtype=np.float64)
+        if inner.any():
+            r_lo = int(re_nodes[inner][0]) - 1
+            r_hi = int(re_nodes[inner][-1])
+            h[inner] = np.take(np.asarray(self.dem[r_lo:r_hi], dtype=np.float64), cols_g, axis=1)
+        h[re_nodes == 0] = self.pole_h[0]
+        h[re_nodes == H + 1] = self.pole_h[1]
+
+        lat_r = np.radians(self.lat_e[R0:R1 + 1])
+        lon_r = np.radians(-180.0 + (C0 + np.arange(ncols + 1) + 0.5) * 360.0 / W)
+        cl = np.cos(lat_r)[:, None]
+        U = np.empty((len(lat_r), ncols + 1, 3), dtype=np.float64)
+        U[..., 0] = cl * np.cos(lon_r)[None, :]
+        U[..., 1] = cl * np.sin(lon_r)[None, :]
+        U[..., 2] = np.sin(lat_r)[:, None]
+        P = (R_MOON + h)[..., None] * U
+
+        # Normalne komórek: iloczyn przekątnych (w układzie ciała skierowany na zewnątrz)
+        n = np.cross(P[1:, 1:] - P[:-1, :-1], P[:-1, 1:] - P[1:, :-1])
+        n /= np.maximum(np.linalg.norm(n, axis=-1, keepdims=True), 1e-15)
+        v = U[:-1, :-1] + U[1:, :-1] + U[1:, 1:] + U[:-1, 1:]
+        del U
+        v /= np.maximum(np.linalg.norm(v, axis=-1, keepdims=True), 1e-15)
+        nv = np.einsum("ijk,ijk->ij", n, v)[..., None]
+        # Wzmocnienie reliefu względem lokalnej pionowej komórki (nie ENU obserwatora)
+        n = nv * v + self.RELIEF_GAIN * (n - nv * v)
+        del v, nv
+        n /= np.maximum(np.linalg.norm(n, axis=-1, keepdims=True), 1e-15)
+        sat_n = self._sat(np.moveaxis(n, -1, 0))
+        del n
+        sat_a = self._sat(self._cell_albedo(R0, R1, C0, ncols))
+
+        lat_c = math.radians(lat_deg)
+        lon_c = math.radians(lon_deg)
+        self.win = {
+            "R0": R0, "R1": R1, "C0": C0, "ncols": ncols, "nrows": R1 - R0, "full": full,
+            "rad_km": rad_km,
+            "center_u": np.array([math.cos(lat_c) * math.cos(lon_c), math.cos(lat_c) * math.sin(lon_c), math.sin(lat_c)]),
+            "h": h, "P": P, "lat_r": lat_r, "lon_r": lon_r,
+            "sat_n": sat_n, "sat_a": sat_a,
+            "roots_r": np.repeat(np.arange(0, R1 - R0, RT), len(range(0, ncols, RT))),
+            "roots_c": np.tile(np.arange(0, ncols, RT), len(range(0, R1 - R0, RT))),
+        }
+
+    @staticmethod
+    def horizon_range_km(eye_km: float) -> float:
+        """Zasięg terenu/horyzontu: max(450, √(2R(h_oka+12)) + √(2R·12)) km."""
+        return max(450.0, math.sqrt(2.0 * R_MOON * (eye_km + 12.0)) + math.sqrt(2.0 * R_MOON * 12.0))
+
+    def _window_local(self, lat_deg, lon_deg):
+        """Ułamkowe indeksy (wiersz, kolumna) punktu w bieżącym oknie siatki."""
+        w = self.win
+        fr = self._lat_to_re(lat_deg) - w["R0"]
+        fc = np.mod(self._lon_to_c(lon_deg) - w["C0"], self.W)
+        return fr, fc
 
     def update_observer(self, lat_deg: float, lon_deg: float, eye_height_m: float = 2.0):
         if (
@@ -456,74 +616,54 @@ class LunarTerrain3D:
         self.cached_lon = lon_deg
         self.cached_eye_height_m = eye_height_m
 
-        ground_h = float(self.sample_dem_bilinear(np.array([lat_deg]), np.array([lon_deg]))[0])
-        self.obs_elev_km = ground_h
-        self.obs_radius_km = R_MOON + ground_h + (eye_height_m / 1000.0)
+        eye_km = eye_height_m / 1000.0
+        r_max = self.horizon_range_km(eye_km)
+        self.eye_km = eye_km
+        self.r_max_km = r_max
 
         lat0 = math.radians(lat_deg)
         lon0 = math.radians(lon_deg)
         up0 = np.array([math.cos(lat0) * math.cos(lon0), math.cos(lat0) * math.sin(lon0), math.sin(lat0)])
         east0 = np.array([-math.sin(lon0), math.cos(lon0), 0.0])
         north0 = np.cross(up0, east0)
+        self.up0, self.east0, self.north0 = up0, east0, north0
+
+        # Okno siatki budowane z zapasem i używane ponownie, dopóki potrzebny dysk r_max mieści się w nim
+        w = self.win
+        if w is None:
+            rebuild = True
+        else:
+            off_km = R_MOON * math.acos(max(-1.0, min(1.0, float(np.dot(up0, w["center_u"])))))
+            rebuild = off_km + r_max > w["rad_km"]
+        if rebuild:
+            self._build_window(lat_deg, lon_deg, r_max)
+            w = self.win
+
+        # Wysokość gruntu = przecięcie pionu oka z narysowanym trójkątem komórki obserwatora
+        # (komórka = 2 trójkąty z przekątną 00-11), więc oko jest dokładnie h_oka nad narysowaną powierzchnią
+        fr, fc = self._window_local(lat_deg, lon_deg)
+        i = int(min(max(math.floor(fr), 0), w["nrows"] - 1))
+        j = int(min(max(math.floor(fc), 0), w["ncols"] - 1))
+        lr0, lc0, lr1, lc1 = self._observer_leaf(i, j)
+        u = (float(fr) - lr0) / (lr1 - lr0)
+        v = (float(fc) - lc0) / (lc1 - lc0)
+        P = w["P"]
+        if u >= v:
+            ta, tb, tc = P[lr0, lc0], P[lr1, lc0], P[lr1, lc1]
+        else:
+            ta, tb, tc = P[lr0, lc0], P[lr1, lc1], P[lr0, lc1]
+        tn = np.cross(tb - ta, tc - ta)
+        den = float(np.dot(tn, up0))
+        ground_r = float(np.dot(tn, ta)) / den if abs(den) > 1e-12 else float(np.linalg.norm(ta))
+        self.obs_cell = (i, j)
+        self.obs_elev_km = ground_r - R_MOON
+        self.obs_radius_km = ground_r + eye_km
         obs_body = self.obs_radius_km * up0
+        self.obs_body = obs_body
 
-        # 1. Odwzorowanie siatki czworokątów na kulę Księżyca R_MOON + DEM
-        u_body = (
-            self.cos_delta_grid[..., None] * up0[None, None, :]
-            + (self.N_grid * self.sinc_over_R)[..., None] * north0[None, None, :]
-            + (self.E_grid * self.sinc_over_R)[..., None] * east0[None, None, :]
-        )
-
-        v_lat = np.degrees(np.arcsin(np.clip(u_body[..., 2], -1.0, 1.0)))
-        v_lon = np.degrees(np.arctan2(u_body[..., 1], u_body[..., 0]))
-
-        detail_atten = np.exp(-self.s_grid / 12.0)
-        h_grid = self.sample_dem_bilinear(v_lat, v_lon, detail_atten=detail_atten)
-        r_grid = R_MOON + h_grid
-
-        p_body = r_grid[..., None] * u_body
-        rel_body = p_body - obs_body[None, None, :]
-
-        rel_n = rel_body @ north0
-        rel_e = rel_body @ east0
-        rel_u = rel_body @ up0
-        self.pts_enu = np.stack([rel_n, rel_e, rel_u], axis=-1)
-
-        # Normalne powierzchni dla czworokątów (skierowane ku +Up)
-        p00 = self.pts_enu[:-1, :-1]
-        p10 = self.pts_enu[1:, :-1]
-        p11 = self.pts_enu[1:, 1:]
-        p01 = self.pts_enu[:-1, 1:]
-
-        normals = np.cross(p11 - p00, p01 - p10)
-        normals /= np.maximum(np.linalg.norm(normals, axis=-1, keepdims=True), 1e-15)
-
-        relief_gain = 1.85
-        normals[..., 0] *= relief_gain
-        normals[..., 1] *= relief_gain
-
-        mid_n = 0.25 * (rel_n[:-1, :-1] + rel_n[1:, :-1] + rel_n[1:, 1:] + rel_n[:-1, 1:])
-        mid_e = 0.25 * (rel_e[:-1, :-1] + rel_e[1:, :-1] + rel_e[1:, 1:] + rel_e[:-1, 1:])
-        # Środek komórki liczony na wektorach jednostkowych (odporny na szew ±180° i bieguny)
-        mid_u = 0.25 * (u_body[:-1, :-1] + u_body[1:, :-1] + u_body[1:, 1:] + u_body[:-1, 1:])
-        mid_u /= np.maximum(np.linalg.norm(mid_u, axis=-1, keepdims=True), 1e-15)
-        mid_lat = np.degrees(np.arcsin(np.clip(mid_u[..., 2], -1.0, 1.0)))
-        mid_lon = np.degrees(np.arctan2(mid_u[..., 1], mid_u[..., 0]))
-
-        normals[..., 0] += 0.045 * np.sin(mid_n * 55.0 - mid_e * 37.0)
-        normals[..., 1] += 0.045 * np.cos(mid_n * 43.0 + mid_e * 61.0)
-        normals /= np.maximum(np.linalg.norm(normals, axis=-1, keepdims=True), 1e-15)
-        self.normals_enu = normals
-
-        self.quad_rgb = self.sample_surface_texture(mid_lat, mid_lon, mid_n, mid_e)
-
-        # Zaślepka środka (r < r0): jeden wielokąt, normalna i kolor uśrednione z pierścienia 0
-        cap_n = normals[0].mean(axis=0)
-        self.cap_normal = cap_n / max(float(np.linalg.norm(cap_n)), 1e-15)
-        self.cap_rgb = self.quad_rgb[0].mean(axis=0)
-
-        # 2. Niezależny profil horyzontu topograficznego 360° (720 azymutów x 120 promieni do 450 km)
-        delta_h = (self.hor_radii_km / R_MOON)[:, None]
+        # Profil horyzontu topograficznego 360° (720 azymutów x 240 promieni do r_max), z siatki węzłów DEM
+        hor_radii_km = np.geomspace(0.02, r_max, self.N_HOR_RAYS)
+        delta_h = (hor_radii_km / R_MOON)[:, None]
         az_h = self.az_grid[None, :]
         u_hor = (
             np.cos(delta_h)[..., None] * up0[None, None, :]
@@ -532,7 +672,7 @@ class LunarTerrain3D:
         )
         h_lat = np.degrees(np.arcsin(np.clip(u_hor[..., 2], -1.0, 1.0)))
         h_lon = np.degrees(np.arctan2(u_hor[..., 1], u_hor[..., 0]))
-        h_elev = self.sample_dem_bilinear(h_lat, h_lon, detail_atten=np.exp(-self.hor_radii_km / 12.0)[:, None])
+        h_elev = self.sample_dem_mesh(h_lat, h_lon)
         r_hor = R_MOON + h_elev
 
         rel_hor = r_hor[..., None] * u_hor - obs_body[None, None, :]
@@ -568,7 +708,7 @@ class LunarTerrain3D:
                 "Observer_Elevation_km",
                 "Observer_Height_above_surface_m",
             ])
-            for idx in range(self.n_hor_az):
+            for idx in range(self.n_az):
                 writer.writerow([
                     f"{math.degrees(self.az_grid[idx]):.4f}",
                     f"{math.degrees(self.horizon_alt[idx]):.6f}",
@@ -583,156 +723,388 @@ class LunarTerrain3D:
                 ])
         print(f"[OK] Wyeksportowano dane horyzontu do: {filename}")
 
+    def _camera_body(self, cam_alt, cam_az):
+        """Baza kamery (fwd, right, up) w układzie [North, East, Up] oraz w układzie ciała."""
+        fwd = np.array([math.cos(cam_alt) * math.cos(cam_az), math.cos(cam_alt) * math.sin(cam_az), math.sin(cam_alt)])
+        right = np.array([-math.sin(cam_az), math.cos(cam_az), 0.0])
+        cam_up = np.array([-math.sin(cam_alt) * math.cos(cam_az), -math.sin(cam_alt) * math.sin(cam_az), math.cos(cam_alt)])
+        to_body = np.stack([self.north0, self.east0, self.up0], axis=0)  # wiersze: N, E, U w układzie ciała
+        return fwd, right, cam_up, fwd @ to_body, right @ to_body, cam_up @ to_body
+
+    @staticmethod
+    def _split_rule(ns, ew, hr, hc):
+        """Podział anizotropowy: tylko wiersze, gdy ns > 1.5·ew; tylko kolumny, gdy ew > 1.5·ns.
+        Gdy wymiaru dominującego nie da się już podzielić (1 komórka), podział drugiej osi nie zmniejszy
+        max(ns, ew), więc węzeł jest liściem (inaczej przy biegunie powstają paski 1x1)."""
+        split_r = ~(ew > 1.5 * ns) & (hr > 1)
+        split_c = ~(ns > 1.5 * ew) & (hc > 1)
+        stuck = ((ns >= ew) & (hr == 1)) | ((ew >= ns) & (hc == 1)) | ~(split_r | split_c)
+        return split_r, split_c, stuck
+
+    def _node_extent_km(self, r0, c0, r1, c1):
+        """Wymiary węzła (ns, ew) w km; ew liczone przy szerokości bliższej równikowi."""
+        lat_r, lon_r = self.win["lat_r"], self.win["lon_r"]
+        la, lb = lat_r[r0], lat_r[r1]
+        ns = R_MOON * (la - lb)
+        cos_eq = np.where((la > 0.0) & (lb < 0.0), 1.0, np.maximum(np.cos(la), np.cos(lb)))
+        return ns, R_MOON * (lon_r[c1] - lon_r[c0]) * cos_eq
+
+    def _observer_leaf(self, oi, oj):
+        """Liść drzewa zawierający komórkę obserwatora (zawsze dzielony aż do reguły „stuck”)."""
+        nr, nc, RT = self.win["nrows"], self.win["ncols"], self.ROOT
+        r0, c0, hr, hc = (oi // RT) * RT, (oj // RT) * RT, RT, RT
+        while True:
+            r1, c1 = min(r0 + hr, nr), min(c0 + hc, nc)
+            ns, ew = self._node_extent_km(np.array([r0]), np.array([c0]), np.array([r1]), np.array([c1]))
+            sr, sc, stuck = self._split_rule(ns, ew, np.array([hr]), np.array([hc]))
+            if stuck[0]:
+                return r0, c0, r1, c1
+            if sr[0]:
+                hr //= 2
+                if oi >= r0 + hr:
+                    r0 += hr
+            if sc[0]:
+                hc //= 2
+                if oj >= c0 + hc:
+                    c0 += hc
+
+    def _lod_pass(self, focal, tan_x, tan_y, fwd_b, right_b, up_b, tau):
+        """Jedno zejście metrycznego drzewa czwórkowego; zwraca liście (r0, c0, r1, c1) w komórkach okna."""
+        w = self.win
+        nr, nc = w["nrows"], w["ncols"]
+        lat_r, lon_r = w["lat_r"], w["lon_r"]
+        up0, obs = self.up0, self.obs_body
+        r_max = self.r_max_km
+        h2 = self.eye_km * self.eye_km
+        inv_x = 1.0 / math.sqrt(1.0 + tan_x * tan_x)
+        inv_y = 1.0 / math.sqrt(1.0 + tan_y * tan_y)
+        oi, oj = self.obs_cell
+
+        r0 = w["roots_r"]
+        c0 = w["roots_c"]
+        hr = np.full(r0.shape, self.ROOT, dtype=np.int64)
+        hc = np.full(r0.shape, self.ROOT, dtype=np.int64)
+        out = []
+        while r0.size:
+            r1 = np.minimum(r0 + hr, nr)
+            c1 = np.minimum(c0 + hc, nc)
+            ns, ew = self._node_extent_km(r0, c0, r1, c1)
+            latc = 0.5 * (lat_r[r0] + lat_r[r1])
+            lonc = 0.5 * (lon_r[c0] + lon_r[c1])
+            clc = np.cos(latc)
+            ux, uy, uz = clc * np.cos(lonc), clc * np.sin(lonc), np.sin(latc)
+            arc = R_MOON * np.arccos(np.clip(ux * up0[0] + uy * up0[1] + uz * up0[2], -1.0, 1.0))
+            half = 0.5 * np.hypot(ns, ew)
+            d_poz = np.maximum(arc - half, 0.0)
+
+            # Culling: zasięg horyzontu oraz sfera otaczająca względem ostrosłupa widzenia
+            px, py, pz = R_MOON * ux - obs[0], R_MOON * uy - obs[1], R_MOON * uz - obs[2]
+            zc = px * fwd_b[0] + py * fwd_b[1] + pz * fwd_b[2]
+            xc = px * right_b[0] + py * right_b[1] + pz * right_b[2]
+            yc = px * up_b[0] + py * up_b[1] + pz * up_b[2]
+            rad = half + R_MOON * (1.0 - np.cos(np.minimum(half / R_MOON, math.pi))) + 10.0
+            keep = (
+                (d_poz <= r_max) & (zc >= -rad)
+                & ((zc * tan_x + xc) * inv_x >= -rad) & ((zc * tan_x - xc) * inv_x >= -rad)
+                & ((zc * tan_y + yc) * inv_y >= -rad) & ((zc * tan_y - yc) * inv_y >= -rad)
+            )
+
+            # Kryterium podziału (jak wybór poziomu mipmapy): rozmiar na ekranie <= τ px
+            d = np.sqrt(d_poz * d_poz + h2)
+            size_px = np.maximum(ns, ew) * focal / np.maximum(d, 1e-9)
+            split_r, split_c, stuck = self._split_rule(ns, ew, hr, hc)
+            # Węzeł z komórką obserwatora schodzi zawsze do poziomu „stuck” (ten sam liść co w update_observer)
+            has_obs = (r0 <= oi) & (oi < r1) & (c0 <= oj) & (oj < c1)
+            leaf = keep & (((size_px <= tau) & ~has_obs) | stuck)
+            out.append((r0[leaf], c0[leaf], r1[leaf], c1[leaf]))
+
+            sp = keep & ~leaf
+            if not sp.any():
+                break
+            r0s, c0s, hrs, hcs = r0[sp], c0[sp], hr[sp], hc[sp]
+            sr, sc = split_r[sp], split_c[sp]
+            nhr = np.where(sr, hrs // 2, hrs)
+            nhc = np.where(sc, hcs // 2, hcs)
+            kr_l, kc_l, khr_l, khc_l = [], [], [], []
+            for dr, dc in ((0, 0), (1, 0), (0, 1), (1, 1)):
+                m = np.ones(r0s.shape, dtype=bool)
+                if dr:
+                    m &= sr
+                if dc:
+                    m &= sc
+                kr = r0s[m] + dr * nhr[m]
+                kc = c0s[m] + dc * nhc[m]
+                ok = (kr < nr) & (kc < nc)
+                kr_l.append(kr[ok]); kc_l.append(kc[ok])
+                khr_l.append(nhr[m][ok]); khc_l.append(nhc[m][ok])
+            r0 = np.concatenate(kr_l)
+            c0 = np.concatenate(kc_l)
+            hr = np.concatenate(khr_l)
+            hc = np.concatenate(khc_l)
+
+        return tuple(np.concatenate([o[k] for o in out]) for k in range(4))
+
+    def _select_lod(self, cw, ch, cam_alt, cam_az, fov):
+        """Wybór liści LOD dla bieżącej kamery z budżetem MAX_QUADS (jedna powtórka z większym τ)."""
+        focal = (ch / 2.0) / math.tan(fov / 2.0)
+        margin = 90.0
+        tan_x = (cw / 2.0 + margin) / focal
+        tan_y = (ch / 2.0 + margin) / focal
+        _, _, _, fwd_b, right_b, up_b = self._camera_body(cam_alt, cam_az)
+        # τ startuje od wartości z poprzedniej klatki (zwykle jedno przejście drzewa zamiast dwóch)
+        tau = max(self.TAU_PX, self.lod_tau)
+        leaves = self._lod_pass(focal, tan_x, tan_y, fwd_b, right_b, up_b, tau)
+        n = len(leaves[0])
+        if n > self.MAX_QUADS:
+            # Zmierzone N ~ τ^-1.1 (dalekie pole ucięte zasięgiem r_max), więc korekta liniowa, nie √
+            tau *= n / self.MAX_QUADS
+            leaves = self._lod_pass(focal, tan_x, tan_y, fwd_b, right_b, up_b, tau)
+            self.lod_tau = tau
+        elif n < 0.6 * self.MAX_QUADS and tau > self.TAU_PX:
+            # Histereza: w dół dopiero przy wyraźnym zapasie budżetu, zmiana od następnej klatki
+            self.lod_tau = max(self.TAU_PX, tau * n / (0.8 * self.MAX_QUADS))
+        else:
+            self.lod_tau = tau
+        self.lod_tau_used = tau
+        self.quad_count = len(leaves[0])
+        return leaves
+
+    def _stitch_t_vertices(self, r0, c0, r1, c1):
+        """Zszywa T-junctions: węzeł leżący wewnątrz krawędzi większego liścia trafia na odcinek 3D tej krawędzi.
+
+        Zwraca (pozycje unikalnych węzłów w układzie ciała, indeksy narożników liści [00, 10, 11, 01],
+        maska węzłów przesuniętych, maska liści z przesuniętym narożnikiem).
+        """
+        w = self.win
+        full, ncols, nrows = w["full"], w["ncols"], w["nrows"]
+        NC = ncols if full else ncols + 1
+        cc0 = c0 % NC
+        cc1 = c1 % NC
+        ids = np.stack([r0 * NC + cc0, r1 * NC + cc0, r1 * NC + cc1, r0 * NC + cc1], axis=1)
+        # Unikalne węzły przez gęstą mapę na siatce okna (szybciej niż sortowanie w np.unique)
+        n_grid = (nrows + 1) * NC
+        if w.get("node_map") is None or w["node_map"].size != n_grid:
+            w["node_map"] = np.zeros(n_grid, dtype=np.int64)
+        node_map = w["node_map"]
+        flat = ids.ravel()
+        node_map[flat] = 1
+        uniq = np.flatnonzero(node_map)
+        node_map[uniq] = np.arange(len(uniq))
+        corners = node_map[flat].reshape(-1, 4)
+        node_map[uniq] = 0
+        ur = uniq // NC
+        uc = uniq % NC
+        pos = w["P"][ur, uc]
+
+        n_u = len(uniq)
+        has = np.zeros(n_u, dtype=bool)
+        e0 = np.zeros(n_u, dtype=np.int64)
+        e1 = np.zeros(n_u, dtype=np.int64)
+        tt = np.zeros(n_u, dtype=np.float64)
+
+        def _match(line_e, a_e, b_e, end0, end1, line_q, pos_q, big):
+            # W każdym zbiorze krawędzie z jednej linii są rozłączne -> jednoznaczny kandydat z a < pos
+            key = line_e * big + a_e
+            order = np.argsort(key)
+            ks = key[order]
+            k = np.searchsorted(ks, line_q * big + pos_q, side="left") - 1
+            valid = k >= 0
+            idx = order[np.maximum(k, 0)]
+            ok = valid & (line_e[idx] == line_q) & (a_e[idx] < pos_q) & (pos_q < b_e[idx])
+            t = (pos_q - a_e[idx]) / np.maximum(b_e[idx] - a_e[idx], 1)
+            return ok, end0[idx], end1[idx], t
+
+        big_h = ncols + 2
+        big_v = nrows + 2
+        edge_sets = (
+            (r0, c0, c1, corners[:, 0], corners[:, 3], ur, uc, big_h),   # krawędzie górne
+            (r1, c0, c1, corners[:, 1], corners[:, 2], ur, uc, big_h),   # krawędzie dolne
+            (cc0, r0, r1, corners[:, 0], corners[:, 1], uc, ur, big_v),  # krawędzie lewe
+            (cc1, r0, r1, corners[:, 3], corners[:, 2], uc, ur, big_v),  # krawędzie prawe (szew: ncols == 0)
+        )
+        for line_e, a_e, b_e, end0, end1, line_q, pos_q, big in edge_sets:
+            ok, m0, m1, t = _match(line_e, a_e, b_e, end0, end1, line_q, pos_q, big)
+            ok &= ~has
+            has |= ok
+            e0[ok], e1[ok], tt[ok] = m0[ok], m1[ok], t[ok]
+
+        m = np.nonzero(has)[0]
+        if m.size:
+            a, b, t = e0[m], e1[m], tt[m][:, None]
+            # Przesunięcia kaskadowe: iteracja punktu stałego (głębokość <= liczba poziomów drzewa)
+            for _ in range(16):
+                new = pos[a] * (1.0 - t) + pos[b] * t
+                delta = float(np.abs(new - pos[m]).max())
+                pos[m] = new
+                if delta < 1e-10:
+                    break
+        return pos, corners, has, has[corners].any(axis=1)
+
     def draw_3d(self, screen, cw, ch, cam_alt, cam_az, fov, sun_alt, sun_az, earth_alt,
                 sun_effective_vis=1.0, eclipse_red_glow=0.0,
                 wireframe=False, show_horizon_line=True):
-        # Prawoskrętna baza kamery w układzie [North, East, Up]
-        fwd = np.array([
-            math.cos(cam_alt) * math.cos(cam_az),
-            math.cos(cam_alt) * math.sin(cam_az),
-            math.sin(cam_alt),
-        ])
-        right = np.array([-math.sin(cam_az), math.cos(cam_az), 0.0])
-        cam_up = np.array([
-            -math.sin(cam_alt) * math.cos(cam_az),
-            -math.sin(cam_alt) * math.sin(cam_az),
-            math.cos(cam_alt),
-        ])
-
-        z_cam = self.pts_enu @ fwd
-        x_cam = self.pts_enu @ right
-        y_cam = self.pts_enu @ cam_up
+        # Prawoskrętna baza kamery w układzie [North, East, Up] (i jej odpowiednik w układzie ciała)
+        fwd, right, cam_up, fwd_b, right_b, up_b = self._camera_body(cam_alt, cam_az)
 
         near_z = 0.0002
         half_cw = cw / 2.0
         half_ch = ch / 2.0
         focal = half_ch / math.tan(fov / 2.0)
-
-        safe_z = np.where(z_cam > near_z, z_cam, near_z)
-        sx = half_cw + (x_cam / safe_z) * focal
-        sy = half_ch - (y_cam / safe_z) * focal
-
-        sun_enu = np.array([
-            math.cos(sun_alt) * math.cos(sun_az),
-            math.cos(sun_alt) * math.sin(sun_az),
-            math.sin(sun_alt),
-        ])
-        ndotl = np.einsum("ijk,k->ij", self.normals_enu, sun_enu)
-        direct = np.power(np.maximum(0.0, ndotl), 0.85) * sun_effective_vis
-        earthshine = 0.045 * max(0.0, math.sin(earth_alt))
-        ambient = 0.032 + earthshine
-
-        base_light = 165.0 * ambient + 940.0 * direct
-        red_tint = 1.0 + 0.85 * eclipse_red_glow
-        green_tint = 1.0 - 0.15 * eclipse_red_glow
-        blue_tint = 1.0 - 0.35 * eclipse_red_glow
-
-        lit_rgb = np.empty(self.quad_rgb.shape, dtype=np.uint8)
-        lit_rgb[..., 0] = np.clip(self.quad_rgb[..., 0] * base_light * red_tint, 5, 248)
-        lit_rgb[..., 1] = np.clip(self.quad_rgb[..., 1] * base_light * green_tint, 5, 248)
-        lit_rgb[..., 2] = np.clip(self.quad_rgb[..., 2] * base_light * blue_tint, 5, 248)
-
         margin = 90.0
 
-        # Rysowanie koncentrycznymi pierścieniami od zewnętrznego horyzontu do środka
-        for ring_cells in self.shell_order:
-            for i, j in ring_cells:
-                z00 = z_cam[i, j]
-                z10 = z_cam[i + 1, j]
-                z11 = z_cam[i + 1, j + 1]
-                z01 = z_cam[i, j + 1]
+        # 1. LOD + zszycie T-junctions
+        r0, c0, r1, c1 = self._select_lod(cw, ch, cam_alt, cam_az, fov)
+        if len(r0):
+            w = self.win
+            pos, corners, _, shifted = self._stitch_t_vertices(r0, c0, r1, c1)
 
-                if z00 <= near_z and z10 <= near_z and z11 <= near_z and z01 <= near_z:
-                    continue
+            # 2. Pozycje względem oka tylko dla unikalnych węzłów, potem transformacja kamery
+            rel = pos - self.obs_body[None, :]
+            zn = rel @ fwd_b
+            xn = rel @ right_b
+            yn = rel @ up_b
+            Z = zn[corners]
+            X = xn[corners]
+            Y = yn[corners]
 
-                if z00 > near_z and z10 > near_z and z11 > near_z and z01 > near_z:
-                    px00, py00 = sx[i, j], sy[i, j]
-                    px10, py10 = sx[i + 1, j], sy[i + 1, j]
-                    px11, py11 = sx[i + 1, j + 1], sy[i + 1, j + 1]
-                    px01, py01 = sx[i, j + 1], sy[i, j + 1]
+            # 4. Back-face osobno dla obu trójkątów komórki (00,10,11) i (00,11,01): przód, gdy normalna
+            #    zewnętrzna patrzy w stronę oka. Oba przodem -> czworokąt, jeden -> tylko ten trójkąt.
+            #    Liczone w układzie kamery (right, up, fwd), który jest lewoskrętny względem układu ciała,
+            #    więc warunek „przodem” to dodatni iloczyn mieszany (n · A > 0).
+            X0, Y0, Z0 = X[:, 0], Y[:, 0], Z[:, 0]
 
-                    if (
-                        max(px00, px10, px11, px01) < -margin
-                        or min(px00, px10, px11, px01) > cw + margin
-                        or max(py00, py10, py11, py01) < -margin
-                        or min(py00, py10, py11, py01) > ch + margin
-                    ):
-                        continue
+            def _tri_front(i, j):
+                ux, uy, uz = X[:, i] - X0, Y[:, i] - Y0, Z[:, i] - Z0
+                vx, vy, vz = X[:, j] - X0, Y[:, j] - Y0, Z[:, j] - Z0
+                return (uy * vz - uz * vy) * X0 + (uz * vx - ux * vz) * Y0 + (ux * vy - uy * vx) * Z0 > 0.0
 
-                    poly = [
-                        (int(px00), int(py00)),
-                        (int(px10), int(py10)),
-                        (int(px11), int(py11)),
-                        (int(px01), int(py01)),
-                    ]
-                else:
-                    clipped = _clip_poly_near(
-                        [
-                            (float(x_cam[i, j]), float(y_cam[i, j]), float(z00)),
-                            (float(x_cam[i + 1, j]), float(y_cam[i + 1, j]), float(z10)),
-                            (float(x_cam[i + 1, j + 1]), float(y_cam[i + 1, j + 1]), float(z11)),
-                            (float(x_cam[i, j + 1]), float(y_cam[i, j + 1]), float(z01)),
-                        ],
-                        near_z,
-                    )
+            front1 = _tri_front(1, 2)
+            front2 = _tri_front(2, 3)
+
+            # 3. Liście w całości przed kamerą i w paśmie ochronnym ekranu idą wektorowo
+            guard = 3000.0
+            front = Z > near_z
+            all_front = front.all(axis=1)
+            safe_z = np.where(front, Z, 1.0)
+            SX = half_cw + X / safe_z * focal
+            SY = half_ch - Y / safe_z * focal
+            offscreen = all_front & (
+                (SX.max(axis=1) < -margin) | (SX.min(axis=1) > cw + margin)
+                | (SY.max(axis=1) < -margin) | (SY.min(axis=1) > ch + margin)
+            )
+            in_guard = (
+                all_front
+                & (np.abs(SX - half_cw) <= half_cw + guard).all(axis=1)
+                & (np.abs(SY - half_ch) <= half_ch + guard).all(axis=1)
+            )
+            vis = in_guard & ~offscreen
+            SXY = np.rint(np.stack([np.where(vis[:, None], SX, 0.0), np.where(vis[:, None], SY, 0.0)], axis=-1)).astype(np.int32)
+            any_face = front1 | front2
+            near_mask = front.any(axis=1) & ~vis & ~offscreen & any_face
+            need = np.nonzero((vis & any_face) | near_mask)[0]
+
+            # Kolejność malarza: odległość pozioma środka liścia, komórka obserwatora na końcu
+            # (klucz i oświetlenie liczone tylko dla liści, które zostaną narysowane)
+            node_n = rel @ self.north0
+            node_e = rel @ self.east0
+            cn = corners[need]
+            key = np.zeros(len(r0), dtype=np.float64)
+            key[need] = np.hypot(node_n[cn].mean(axis=1), node_e[cn].mean(axis=1))
+            oi, oj = self.obs_cell
+            key[(r0 <= oi) & (oi < r1) & (c0 <= oj) & (oj < c1)] = -1.0
+
+            # 5. Oświetlenie: średnia (niezunormowana) normalna i albedo z SAT
+            rn0, cn0, rn1, cn1 = r0[need], c0[need], r1[need], c1[need]
+            n_mean = self._rect_mean(w["sat_n"], rn0, cn0, rn1, cn1)
+            alb = self._rect_mean(w["sat_a"], rn0, cn0, rn1, cn1)
+            sun_enu = np.array([
+                math.cos(sun_alt) * math.cos(sun_az),
+                math.cos(sun_alt) * math.sin(sun_az),
+                math.sin(sun_alt),
+            ])
+            sun_body = sun_enu[0] * self.north0 + sun_enu[1] * self.east0 + sun_enu[2] * self.up0
+            ndotl = n_mean @ sun_body
+            direct = np.power(np.maximum(0.0, ndotl), 0.85) * sun_effective_vis
+            earthshine = 0.045 * max(0.0, math.sin(earth_alt))
+            ambient = 0.032 + earthshine
+
+            base_light = 165.0 * ambient + 940.0 * direct
+            tint = np.array([1.0 + 0.85 * eclipse_red_glow, 1.0 - 0.15 * eclipse_red_glow, 1.0 - 0.35 * eclipse_red_glow])
+            lit_rgb = np.zeros((len(r0), 3), dtype=np.int32)
+            lit_rgb[need] = np.clip(alb * base_light[:, None] * tint[None, :], 5, 248).astype(np.int32)
+
+            polys, colors, outline, keys = [], [], [], []
+            for sel, verts in (
+                (vis & front1 & front2, [0, 1, 2, 3]),
+                (vis & front1 & ~front2, [0, 1, 2]),
+                (vis & ~front1 & front2, [0, 2, 3]),
+            ):
+                idx = np.nonzero(sel)[0]
+                polys += SXY[idx][:, verts].tolist()
+                colors += lit_rgb[idx].tolist()
+                # Obrys 1 px: liście z przesuniętym węzłem T oraz pojedyncze trójkąty (krawędź przekątnej
+                # nie ma wspólnych wierzchołków z sąsiadem za nią, więc zaokrąglenia mogą zostawić piksel)
+                outline += (shifted[idx] | (len(verts) == 3)).tolist()
+                keys.append(key[idx])
+
+            # Liście przecinające płaszczyznę bliską lub wychodzące poza pasmo ochronne (kilkadziesiąt wokół
+            # obserwatora): trójkąty przycinane w 3D do ostrosłupa, w Pythonie
+            gx = (half_cw + guard) / focal
+            gy = (half_ch + guard) / focal
+            near_idx = np.nonzero(near_mask)[0]
+            near_keys = []
+            for k in near_idx.tolist():
+                cam = [(float(X[k, q]), float(Y[k, q]), float(Z[k, q])) for q in range(4)]
+                # Zawsze osobne trójkąty: niepłaski czworokąt wokół oka przycięty jako całość daje błędny kontur
+                tris = []
+                if front1[k]:
+                    tris.append([cam[0], cam[1], cam[2]])
+                if front2[k]:
+                    tris.append([cam[0], cam[2], cam[3]])
+                for tri in tris:
+                    clipped = _clip_poly_frustum(tri, near_z, gx, gy)
                     if len(clipped) < 3:
                         continue
-                    poly = [
-                        (
-                            int(max(-16000.0, min(16000.0, half_cw + (vx / vz) * focal))),
-                            int(max(-16000.0, min(16000.0, half_ch - (vy / vz) * focal))),
-                        )
+                    polys.append([
+                        [int(round(half_cw + (vx / vz) * focal)), int(round(half_ch - (vy / vz) * focal))]
                         for vx, vy, vz in clipped
-                    ]
+                    ])
+                    colors.append(lit_rgb[k].tolist())
+                    outline.append(True)
+                    near_keys.append(key[k])
+            keys.append(np.array(near_keys, dtype=np.float64))
+            order = np.argsort(-np.concatenate(keys), kind="stable").tolist()
+            self.drawn_count = len(order)
 
-                c = (int(lit_rgb[i, j, 0]), int(lit_rgb[i, j, 1]), int(lit_rgb[i, j, 2]))
-                pygame.draw.polygon(screen, c, poly)
-                if wireframe:
-                    ec = (min(255, c[0] + 35), min(255, c[1] + 35), min(255, c[2] + 40))
-                    pygame.draw.polygon(screen, ec, poly, 1)
-                else:
-                    # Uszczelnienie krawędzi 1 px zapobiega powstawaniu czarnych szczelin między czworokątami
-                    pygame.draw.polygon(screen, c, poly, 1)
-
-        # Zaślepka środka siatki (pod obserwatorem), rysowana jako ostatnia
-        cap_clipped = _clip_poly_near(
-            [(float(x_cam[0, j]), float(y_cam[0, j]), float(z_cam[0, j])) for j in range(self.n_az)],
-            near_z,
-        )
-        if len(cap_clipped) >= 3:
-            cap_light = 165.0 * ambient + 940.0 * (max(0.0, float(self.cap_normal @ sun_enu)) ** 0.85) * sun_effective_vis
-            cap_c = (
-                int(np.clip(self.cap_rgb[0] * cap_light * red_tint, 5, 248)),
-                int(np.clip(self.cap_rgb[1] * cap_light * green_tint, 5, 248)),
-                int(np.clip(self.cap_rgb[2] * cap_light * blue_tint, 5, 248)),
-            )
-            cap_poly = [
-                (
-                    int(max(-16000.0, min(16000.0, half_cw + (vx / vz) * focal))),
-                    int(max(-16000.0, min(16000.0, half_ch - (vy / vz) * focal))),
-                )
-                for vx, vy, vz in cap_clipped
-            ]
-            pygame.draw.polygon(screen, cap_c, cap_poly)
+            # 7. Rysowanie od najdalszego liścia
+            draw_poly = pygame.draw.polygon
+            if wireframe:
+                for k in order:
+                    c = colors[k]
+                    draw_poly(screen, c, polys[k])
+                    draw_poly(screen, (min(255, c[0] + 35), min(255, c[1] + 35), min(255, c[2] + 40)), polys[k], 1)
+            else:
+                for k in order:
+                    draw_poly(screen, colors[k], polys[k])
+                    if outline[k]:
+                        # Liść z przesuniętym węzłem T: obrys 1 px łata zaokrąglenia na krawędzi większego sąsiada
+                        draw_poly(screen, colors[k], polys[k], 1)
+        else:
+            self.drawn_count = 0
 
         if show_horizon_line:
-            h_pts = []
-            for h_alt, h_az in zip(self.horizon_alt, self.az_grid):
-                px = math.cos(h_alt) * math.cos(h_az)
-                py = math.cos(h_alt) * math.sin(h_az)
-                pz_h = math.sin(h_alt)
-                p = np.array([px, py, pz_h])
-                zc = float(np.dot(p, fwd))
-                if zc > 0.05:
-                    xc = float(np.dot(p, right))
-                    yc = float(np.dot(p, cam_up))
-                    h_pts.append((half_cw + (xc / zc) * focal, half_ch - (yc / zc) * focal))
-                else:
-                    if len(h_pts) > 1:
-                        pygame.draw.lines(screen, (90, 175, 220), False, h_pts, 2)
-                    h_pts = []
-            if len(h_pts) > 1:
-                pygame.draw.lines(screen, (90, 175, 220), False, h_pts, 2)
+            # Linia horyzontu: odcinki ciągłych azymutów z zc > 0.05 (rzut wektorowy)
+            ca = np.cos(self.horizon_alt)
+            hp = np.stack([ca * np.cos(self.az_grid), ca * np.sin(self.az_grid), np.sin(self.horizon_alt)], axis=1)
+            zc = hp @ fwd
+            ok = zc > 0.05
+            zs = np.where(ok, zc, 1.0)
+            hx = half_cw + (hp @ right) / zs * focal
+            hy = half_ch - (hp @ cam_up) / zs * focal
+            edges = np.flatnonzero(np.diff(np.concatenate([[0], ok.astype(np.int8), [0]])))
+            for s, e in zip(edges[::2].tolist(), edges[1::2].tolist()):
+                if e - s > 1:
+                    pygame.draw.lines(screen, (90, 175, 220), False, np.stack([hx[s:e], hy[s:e]], axis=1).tolist(), 2)
 
 
 def draw_telescopic_sun(screen, sx, sy, r_sun_exact, cw, ch):
@@ -1619,7 +1991,7 @@ def main():
             if 0 <= ex + r_elabel + 8 < cw and 0 <= ey - 8 < ch:
                 screen.blit(font.render("Ziemia", True, (130, 200, 255)), (ex + r_elabel + 8, ey - 8))
 
-        # 5. MODEL 3D TEKSTUROWANEJ POWIERZCHNI KSIĘŻYCA (SIATKA CZWOROKĄTÓW SQUIRCLE)
+        # 5. MODEL 3D POWIERZCHNI KSIĘŻYCA (SIATKA DEM LAT/LON Z LOD)
         terrain_3d.draw_3d(
             screen, cw, ch, cam_alt, cam_az, fov,
             sun_alt, sun_az, earth_alt,
@@ -1659,6 +2031,7 @@ def main():
             f"Lokacja: {location_name} | DEM: {dem_source}",
             f"Teren: {terrain_3d.obs_elev_km:+.3f} km | Wys. obs.: {height_str} | Zoom: {zoom_mag:.1f}x",
             f"Kamera: Az {math.degrees(cam_az):.2f}° | Alt {math.degrees(cam_alt):+.2f}° (Hor: {math.degrees(cam_hor):+.2f}°)",
+            f"Siatka DEM: {terrain_3d.quad_count} liści LOD ({terrain_3d.drawn_count} rysowanych) | τ {terrain_3d.lod_tau_used:.1f} px",
             "-" * 62,
             f"ZIEMIA: Alt {math.degrees(earth_alt):+6.2f}° | Az {math.degrees(earth_az):6.2f}° [{earth_vis}]",
             f"SŁOŃCE: Alt {math.degrees(sun_alt):+6.2f}° | Az {math.degrees(sun_az):6.2f}° [{sun_vis}]",
