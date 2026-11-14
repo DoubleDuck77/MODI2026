@@ -1,0 +1,8 @@
+.git
+.superpowers
+Textures
+coords
+**/__pycache__
+*.npz
+*.png
+.venv
