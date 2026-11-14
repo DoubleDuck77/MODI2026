@@ -7,26 +7,27 @@ from datetime import datetime, timedelta
 import numpy as np
 import pygame
 
-# --- STAŁE ASTRONOMICZNE (w kilometrach) ---
+# --- STAŁE ASTRONOMICZNE ---
 R_MOON = 1737.4   # Średni promień Księżyca w km
 R_EARTH = 6371.0  # Promień Ziemi w km
 R_SUN = 696340.0  # Promień Słońca w km
 
-I_MOON = math.radians(1.5424)  # Nachylenie równika księżycowego do ekliptyki
-SIDEREAL_MONTH = 27.321661     # dni
+I_MOON = math.radians(1.5424)      # Nachylenie równika księżycowego do ekliptyki
+OBLIQUITY = math.radians(23.4393)  # Nachylenie osi Ziemi do ekliptyki (J2000)
+SIDEREAL_MONTH = 27.321661         # dni
 J2000 = datetime(2000, 1, 1, 12, 0, 0)
 
 # Globalny zakres wysokości mapy NASA LRO LOLA DEM (w km względem R_MOON)
 LOLA_MIN_KM = -9.12
 LOLA_MAX_KM = 10.76
 
+# Stabilne linki do oficjalnych map NASA (SVS Moon CGI Kit)
 LOLA_DEM_URLS = [
-    "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e1/Moon_LRO_LOLA_global_LDEM_1024.jpg/1280px-Moon_LRO_LOLA_global_LDEM_1024.jpg",
-    "https://upload.wikimedia.org/wikipedia/commons/e/e1/Moon_LRO_LOLA_global_LDEM_1024.jpg",
+    "https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/ldem_3_8bit.jpg",
 ]
 
 LRO_COLOR_URLS = [
-    "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d1/Moon_LRO_WAC_global_mosaic_303ppd_v02.jpg/1280px-Moon_LRO_WAC_global_mosaic_303ppd_v02.jpg",
+    "https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_poles_1k.jpg",
 ]
 
 EARTH_DAY_URLS = [
@@ -51,23 +52,8 @@ def _download_first_available(urls, dest_path, label):
     return False
 
 
-def smooth_dem_2d(dem: np.ndarray, sigma: float = 1.8) -> np.ndarray:
-    """Separowalny filtr Gaussa 2D wygładzający 8-bitowe schodki kwantyzacji na horyzoncie."""
-    radius = max(1, int(math.ceil(2.5 * sigma)))
-    x = np.arange(-radius, radius + 1, dtype=np.float32)
-    kernel = np.exp(-0.5 * (x / sigma) ** 2)
-    kernel /= np.sum(kernel)
-
-    pad_x = np.pad(dem, ((0, 0), (radius, radius)), mode="wrap")
-    blur_x = np.apply_along_axis(lambda m: np.convolve(m, kernel, mode="valid"), axis=1, arr=pad_x)
-
-    pad_y = np.pad(blur_x, ((radius, radius), (0, 0)), mode="edge")
-    blur_xy = np.apply_along_axis(lambda m: np.convolve(m, kernel, mode="valid"), axis=0, arr=pad_y)
-    return blur_xy.astype(np.float32)
-
-
 def generate_fallback_lunar_dem(H=720, W=1440):
-    """Generuje zapasową globalną mapę wysokości Księżyca (w km), gdy brak sieci."""
+    """Generuje zapasową mapę wysokości Księżyca (w km), gdy brak dostępu do sieci."""
     lat_1d = np.linspace(np.pi / 2, -np.pi / 2, H)
     lon_1d = np.linspace(-np.pi, np.pi, W)
     lat = lat_1d[:, None]
@@ -124,7 +110,7 @@ def generate_fallback_lunar_dem(H=720, W=1440):
 
 
 def generate_fallback_lunar_albedo(dem_km: np.ndarray) -> np.ndarray:
-    """Tworzy mapę tekstury albedo Księżyca (morza bazaltowe, wyżyny, promienie kraterów)."""
+    """Tworzy realistyczną mapę tekstury albedo Księżyca (morza bazaltowe, wyżyny, promienie kraterów)."""
     H, W = dem_km.shape
     lat = np.linspace(np.pi / 2, -np.pi / 2, H)[:, None]
     lon = np.linspace(-np.pi, np.pi, W)[None, :]
@@ -150,16 +136,16 @@ def generate_fallback_lunar_albedo(dem_km: np.ndarray) -> np.ndarray:
 
 
 def load_or_download_lunar_maps():
-    """Wczytuje lub pobiera globalną mapę wysokości (DEM) oraz teksturę powierzchni Księżyca."""
+    """Wczytuje lub pobiera globalną mapę wysokości (DEM) oraz mapę tekstury albedo Księżyca."""
     os.makedirs("Textures", exist_ok=True)
-    dem_cache = os.path.join("Textures", "moon_dem_v2.npy")
+    dem_cache = os.path.join("Textures", "moon_dem.npy")
     dem_img = os.path.join("Textures", "moon_dem.jpg")
-    alb_cache = os.path.join("Textures", "moon_albedo_v2.npy")
+    alb_cache = os.path.join("Textures", "moon_albedo.npy")
     alb_img = os.path.join("Textures", "moon_color.jpg")
 
     if os.path.exists(dem_cache):
         dem = np.load(dem_cache)
-        dem_src = "LOLA DEM (wygładzony)"
+        dem_src = "LOLA DEM (cache)"
     else:
         _download_first_available(LOLA_DEM_URLS, dem_img, "Mapa wysokości NASA LOLA DEM")
         if os.path.exists(dem_img):
@@ -167,8 +153,7 @@ def load_or_download_lunar_maps():
                 surf = pygame.image.load(dem_img)
                 arr = pygame.surfarray.array3d(surf).transpose(1, 0, 2)
                 gray = arr[:, :, 0].astype(np.float32)
-                raw_dem = LOLA_MIN_KM + (gray / 255.0) * (LOLA_MAX_KM - LOLA_MIN_KM)
-                dem = smooth_dem_2d(raw_dem, sigma=1.8)
+                dem = LOLA_MIN_KM + (gray / 255.0) * (LOLA_MAX_KM - LOLA_MIN_KM)
                 np.save(dem_cache, dem)
                 dem_src = "NASA LRO LOLA DEM"
             except Exception:
@@ -185,7 +170,7 @@ def load_or_download_lunar_maps():
             (p for p in ["Textures/moon_color8K.jpg", "Textures/moon_color.jpg", "Textures/moon_albedo.jpg"] if os.path.exists(p)),
             None,
         )
-        if custom_tex is None and _download_first_available(LRO_COLOR_URLS, alb_img, "Tekstura powierzchni NASA LRO WAC"):
+        if custom_tex is None and _download_first_available(LRO_COLOR_URLS[:1], alb_img, "Tekstura powierzchni NASA LRO WAC"):
             custom_tex = alb_img
 
         if custom_tex is not None:
@@ -204,7 +189,7 @@ def load_or_download_lunar_maps():
 
 
 def load_earth_textures():
-    """Wczytuje tekstury Ziemi lub pobiera globalną mapę Blue Marble, jeśli brak plików lokalnych."""
+    """Wczytuje tekstury Ziemi (dzień, noc, chmury) z folderu Textures/."""
     os.makedirs("Textures", exist_ok=True)
     day_candidates = [
         "Textures/earth_day8K.jpg",
@@ -218,8 +203,21 @@ def load_earth_textures():
         if _download_first_available(EARTH_DAY_URLS, dl_path, "Tekstura Ziemi (Blue Marble)"):
             day_path = dl_path
 
-    night_path = next((p for p in ["Textures/earth_night8K.jpg", "Textures/earth_night8K.png", "Textures/earth_night.jpg"] if os.path.exists(p)), None)
-    clouds_path = next((p for p in ["Textures/earth_clouds8K.jpg", "Textures/earth_clouds8K.png", "Textures/earth_clouds.jpg"] if os.path.exists(p)), None)
+    night_candidates = [
+        "Textures/earth_night8K.jpg",
+        "Textures/earth_night8K.png",
+        "Textures/earth_night.jpg",
+        "Textures/earth_night.png",
+    ]
+    night_path = next((p for p in night_candidates if os.path.exists(p)), None)
+
+    clouds_candidates = [
+        "Textures/earth_clouds8K.jpg",
+        "Textures/earth_clouds8K.png",
+        "Textures/earth_clouds.jpg",
+        "Textures/earth_clouds.png",
+    ]
+    clouds_path = next((p for p in clouds_candidates if os.path.exists(p)), None)
 
     def _to_rgb_array(path):
         if not path:
@@ -235,52 +233,8 @@ def load_earth_textures():
     return _to_rgb_array(day_path), _to_rgb_array(night_path), _to_rgb_array(clouds_path)
 
 
-def build_regolith_detail_tiles(size: int = 512):
-    """Generuje bezszwową mapę mikro-kraterów, kamieni i wypukłości regolitu (buforowaną na dysku)."""
-    os.makedirs("Textures", exist_ok=True)
-    cache_path = os.path.join("Textures", f"regolith_detail_{size}.npz")
-    if os.path.exists(cache_path):
-        data = np.load(cache_path)
-        return data["albedo_mod"], data["bump_n"], data["bump_e"]
-
-    u = np.linspace(0.0, 2.0 * math.pi, size, endpoint=False, dtype=np.float32)
-    v = np.linspace(0.0, 2.0 * math.pi, size, endpoint=False, dtype=np.float32)
-    gx, gy = np.meshgrid(u, v)
-
-    h = (
-        0.32 * np.sin(gx * 2.0 + 0.3) * np.cos(gy * 2.0 - 0.5)
-        + 0.24 * np.sin(gx * 5.0 - gy * 4.0 + 1.1)
-        + 0.17 * np.cos(gx * 11.0 + gy * 9.0 - 0.7)
-        + 0.12 * np.sin(gx * 23.0 - gy * 19.0 + 0.4)
-        + 0.08 * np.cos(gx * 47.0 + gy * 43.0)
-        + 0.05 * np.sin(gx * 97.0 - gy * 89.0)
-    )
-
-    rng = np.random.default_rng(123)
-    for _ in range(240):
-        cx = rng.uniform(0.0, 2.0 * math.pi)
-        cy = rng.uniform(0.0, 2.0 * math.pi)
-        cr = rng.uniform(0.045, 0.22)
-        dx = (gx - cx + math.pi) % (2.0 * math.pi) - math.pi
-        dy = (gy - cy + math.pi) % (2.0 * math.pi) - math.pi
-        d = np.sqrt(dx * dx + dy * dy)
-        inside = d < cr
-        rim = (d >= cr) & (d < cr * 1.28)
-        h[inside] -= 0.48 * (1.0 - (d[inside] / cr) ** 2)
-        h[rim] += 0.15 * np.sin((d[rim] - cr) / (0.28 * cr) * math.pi)
-
-    bump_n = (np.gradient(h, axis=0) * 2.2).astype(np.float32)
-    bump_e = (np.gradient(h, axis=1) * 2.2).astype(np.float32)
-    albedo_mod = np.clip(1.0 + 0.24 * h, 0.62, 1.42).astype(np.float32)
-
-    np.savez(cache_path, albedo_mod=albedo_mod, bump_n=bump_n, bump_e=bump_e)
-    return albedo_mod, bump_n, bump_e
-
-
 class LunarTerrain3D:
-    """Pikselowy shader powierzchni Księżyca z gładką interpolacją, mikro-kraterami i 60 FPS."""
-
-    LUT_SIZE = 4096
+    """Model 3D powierzchni Księżyca z teksturą regolitu i profilem horyzontu."""
 
     def __init__(self, dem_km: np.ndarray, albedo_rgb: np.ndarray):
         self.dem = dem_km
@@ -288,52 +242,24 @@ class LunarTerrain3D:
         self.albedo_map = albedo_rgb
         self.AH, self.AW = albedo_rgb.shape[:2]
 
-        self.det_alb, self.det_bn, self.det_be = build_regolith_detail_tiles(512)
+        self.radii_km = np.concatenate(([0.0], np.geomspace(0.0005, 450.0, 72)))
+        self.az_grid = np.linspace(0.0, 2.0 * np.pi, 481)
+        self.n_r = len(self.radii_km)
+        self.n_az = len(self.az_grid) - 1
 
-        self.n_r = 220
-        self.n_az = 720
-        self.az_grid = np.linspace(0.0, 2.0 * np.pi, self.n_az + 1, dtype=np.float32)
-        self.radii_km = None
-
-        self.max_r_km = 220.0
-        self.inv_sqrt_scale = 1.0
-        self.lut_idx_lo = None
-        self.lut_wr = None
-        self.lut_fade_fine = None
-        self.lut_fade_med = None
-
-        self.cached_state = None
-        self.h_polar = None
-        self.alb_polar = None
-        self.norm_polar = None
+        self.cached_lat = None
+        self.cached_lon = None
+        self.cached_eye_height_m = None
+        self.pts_enu = None
+        self.normals_enu = None
+        self.quad_rgb = None
         self.horizon_alt = None
-        self.sin_hor_az = None
-        self.hor_dist_az = None
+        self.horizon_dist_km = None
+        self.horizon_lat = None
+        self.horizon_lon = None
+        self.horizon_elev_km = None
         self.obs_elev_km = 0.0
         self.obs_radius_km = R_MOON
-        self.alt_above_km = 0.002
-
-    def _build_polar_and_lut(self, alt_above_surface_km: float):
-        h_safe = max(0.0005, alt_above_surface_km)
-        hor_dist = math.sqrt(max(0.0, (R_MOON + h_safe) ** 2 - R_MOON ** 2))
-        max_r = max(220.0, hor_dist + 160.0)
-        inner_step = min(0.0004, h_safe * 0.2)
-        self.radii_km = np.concatenate(([0.0], np.geomspace(inner_step, max_r, self.n_r - 1))).astype(np.float32)
-        self.max_r_km = max_r
-
-        sqrt_max = math.sqrt(max_r)
-        sqrt_grid = np.linspace(0.0, sqrt_max, self.LUT_SIZE, dtype=np.float32)
-        r_lut = sqrt_grid * sqrt_grid
-        idx_hi = np.clip(np.searchsorted(self.radii_km, r_lut, side="right"), 1, self.n_r - 1)
-        idx_lo = idx_hi - 1
-        r_lo = self.radii_km[idx_lo]
-        r_hi = self.radii_km[idx_hi]
-
-        self.inv_sqrt_scale = (self.LUT_SIZE - 1) / sqrt_max
-        self.lut_idx_lo = idx_lo.astype(np.int32)
-        self.lut_wr = np.clip((r_lut - r_lo) / np.maximum(r_hi - r_lo, 1e-9), 0.0, 1.0).astype(np.float32)
-        self.lut_fade_fine = np.exp(-r_lut / max(0.35, h_safe * 25.0)).astype(np.float32)
-        self.lut_fade_med = np.exp(-r_lut / max(12.0, h_safe * 450.0)).astype(np.float32)
 
     def sample_dem_bilinear(self, lat_deg: np.ndarray, lon_deg: np.ndarray) -> np.ndarray:
         fy = np.clip((90.0 - lat_deg) / 180.0 * (self.H - 1), 0.0, self.H - 1.0001)
@@ -356,12 +282,14 @@ class LunarTerrain3D:
         lat_r = np.radians(lat_deg)
         lon_r = np.radians(lon_wrapped)
         detail = (
-            0.032 * np.sin(lat_r * 920.0) * np.cos(lon_r * 920.0)
-            + 0.014 * np.sin(lat_r * 2400.0 + 1.1) * np.sin(lon_r * 2400.0 - 0.7)
+            0.035 * np.sin(lat_r * 950.0) * np.cos(lon_r * 950.0)
+            + 0.015 * np.sin(lat_r * 2600.0 + 1.1) * np.sin(lon_r * 2600.0 - 0.7)
+            + 0.005 * np.cos(lat_r * 7200.0 - lon_r * 6400.0)
         )
-        return (base_h + detail).astype(np.float32)
+        return base_h + detail
 
-    def sample_albedo_bilinear(self, lat_deg: np.ndarray, lon_deg: np.ndarray) -> np.ndarray:
+    def sample_surface_texture(self, lat_deg: np.ndarray, lon_deg: np.ndarray, rel_n: np.ndarray, rel_e: np.ndarray) -> np.ndarray:
+        """Próbkuje teksturę globalną Księżyca + wieloskalową fakturę regolitu i skał."""
         fy = np.clip((90.0 - lat_deg) / 180.0 * (self.AH - 1), 0.0, self.AH - 1.0001)
         lon_wrapped = ((lon_deg + 180.0) % 360.0) - 180.0
         fx = (lon_wrapped + 180.0) / 360.0 * self.AW
@@ -374,23 +302,42 @@ class LunarTerrain3D:
         wy = (fy - y0)[..., None]
         wx = (fx - np.floor(fx))[..., None]
 
-        return (
+        base_rgb = (
             (self.albedo_map[y0, x0] * (1.0 - wx) + self.albedo_map[y0, x1] * wx) * (1.0 - wy)
             + (self.albedo_map[y1, x0] * (1.0 - wx) + self.albedo_map[y1, x1] * wx) * wy
-        ).astype(np.float32)
+        )
 
-    def update_observer(self, lat_deg: float, lon_deg: float, alt_above_surface_km: float = 0.002):
-        state_key = (round(lat_deg, 5), round(lon_deg, 5), round(alt_above_surface_km, 6))
-        if self.cached_state == state_key:
+        lat_r = np.radians(lat_deg)
+        lon_r = np.radians(lon_wrapped)
+        macro_tex = (
+            0.12 * np.sin(lat_r * 520.0 + 0.4) * np.cos(lon_r * 520.0 - 0.6)
+            + 0.09 * np.cos(lat_r * 1650.0 - lon_r * 1420.0)
+        )
+        micro_tex = (
+            0.14 * np.sin(rel_n * 42.0 + rel_e * 31.0) * np.cos(rel_n * 24.0 - rel_e * 49.0)
+            + 0.10 * np.sin(rel_n * 130.0 - rel_e * 112.0)
+            + 0.07 * np.cos(rel_n * 310.0 + rel_e * 275.0)
+        )
+        dist_km = np.hypot(rel_n, rel_e)
+        micro_weight = np.exp(-dist_km / 3.0)
+
+        tex_factor = np.clip(1.0 + macro_tex + micro_tex * micro_weight, 0.50, 1.55)
+        return base_rgb * tex_factor[..., None]
+
+    def update_observer(self, lat_deg: float, lon_deg: float, eye_height_m: float = 2.0):
+        if (
+            self.cached_lat == lat_deg
+            and self.cached_lon == lon_deg
+            and self.cached_eye_height_m == eye_height_m
+        ):
             return
-        self.cached_state = state_key
-        self.alt_above_km = alt_above_surface_km
-
-        self._build_polar_and_lut(alt_above_surface_km)
+        self.cached_lat = lat_deg
+        self.cached_lon = lon_deg
+        self.cached_eye_height_m = eye_height_m
 
         ground_h = float(self.sample_dem_bilinear(np.array([lat_deg]), np.array([lon_deg]))[0])
         self.obs_elev_km = ground_h
-        self.obs_radius_km = R_MOON + ground_h + alt_above_surface_km
+        self.obs_radius_km = R_MOON + ground_h + (eye_height_m / 1000.0)
 
         lat0 = math.radians(lat_deg)
         lon0 = math.radians(lon_deg)
@@ -399,7 +346,7 @@ class LunarTerrain3D:
         north0 = np.cross(up0, east0)
 
         delta = (self.radii_km / R_MOON)[:, None]
-        az = self.az_grid[:-1][None, :]
+        az = self.az_grid[None, :]
 
         u_body = (
             np.cos(delta)[..., None] * up0[None, None, :]
@@ -411,248 +358,182 @@ class LunarTerrain3D:
         v_lon = np.degrees(np.arctan2(u_body[..., 1], u_body[..., 0]))
 
         h_grid = self.sample_dem_bilinear(v_lat, v_lon)
-        h_grid[0, :] = ground_h
-        self.h_polar = h_grid
         r_grid = R_MOON + h_grid
 
         p_body = r_grid[..., None] * u_body
         obs_body = self.obs_radius_km * up0
         rel_body = p_body - obs_body[None, None, :]
 
-        rel_n = (rel_body @ north0).astype(np.float32)
-        rel_e = (rel_body @ east0).astype(np.float32)
-        rel_u = (rel_body @ up0).astype(np.float32)
-        pts_enu = np.stack([rel_n, rel_e, rel_u], axis=-1)
+        rel_n = rel_body @ north0
+        rel_e = rel_body @ east0
+        rel_u = rel_body @ up0
+        self.pts_enu = np.stack([rel_n, rel_e, rel_u], axis=-1)
 
-        dr_vec = np.empty_like(pts_enu)
-        dr_vec[:-1] = pts_enu[1:] - pts_enu[:-1]
-        dr_vec[-1] = dr_vec[-2]
-
-        daz_vec = 0.5 * (np.roll(pts_enu, -1, axis=1) - np.roll(pts_enu, 1, axis=1))
-        normals = np.cross(dr_vec, daz_vec)
+        p00 = self.pts_enu[:-1, :-1]
+        p10 = self.pts_enu[1:, :-1]
+        p01 = self.pts_enu[:-1, 1:]
+        p11 = self.pts_enu[1:, 1:]
+        normals = np.cross(p10 - p00, p01 - p00)
+        normals[0] = np.cross(p10[0] - p00[0], p11[0] - p00[0])
         norms = np.linalg.norm(normals, axis=-1, keepdims=True)
-        normals = np.where(norms > 1e-9, normals / np.maximum(norms, 1e-9), np.array([0.0, 0.0, 1.0], dtype=np.float32))
-        normals[0, :] = np.array([0.0, 0.0, 1.0], dtype=np.float32)
-        self.norm_polar = normals.astype(np.float32)
+        normals = normals / np.maximum(norms, 1e-15)
 
-        self.alb_polar = self.sample_albedo_bilinear(v_lat, v_lon)
+        mid_n = 0.25 * (rel_n[:-1, :-1] + rel_n[1:, :-1] + rel_n[:-1, 1:] + rel_n[1:, 1:])
+        mid_e = 0.25 * (rel_e[:-1, :-1] + rel_e[1:, :-1] + rel_e[:-1, 1:] + rel_e[1:, 1:])
+        mid_lat = 0.25 * (v_lat[:-1, :-1] + v_lat[1:, :-1] + v_lat[:-1, 1:] + v_lat[1:, 1:])
+        mid_lon = 0.25 * (v_lon[:-1, :-1] + v_lon[1:, :-1] + v_lon[:-1, 1:] + v_lon[1:, 1:])
 
-        dist_3d = np.linalg.norm(pts_enu[1:], axis=-1)
+        bump_n = 0.04 * np.sin(mid_n * 55.0 - mid_e * 37.0)
+        bump_e = 0.04 * np.cos(mid_n * 43.0 + mid_e * 61.0)
+        normals[..., 0] += bump_n
+        normals[..., 1] += bump_e
+        normals /= np.maximum(np.linalg.norm(normals, axis=-1, keepdims=True), 1e-15)
+        self.normals_enu = normals
+
+        self.quad_rgb = self.sample_surface_texture(mid_lat, mid_lon, mid_n, mid_e)
+
+        dist_3d = np.linalg.norm(self.pts_enu[1:], axis=-1)
         elev_angles = np.arcsin(np.clip(rel_u[1:] / np.maximum(dist_3d, 1e-9), -1.0, 1.0))
-        max_idx = np.argmax(elev_angles, axis=0)
-        az_indices = np.arange(self.n_az)
-        raw_hor = elev_angles[max_idx, az_indices]
+        hor_idx = np.argmax(elev_angles, axis=0)
+        az_indices = np.arange(elev_angles.shape[1])
 
-        self.horizon_alt = (
-            0.25 * np.roll(raw_hor, 1)
-            + 0.50 * raw_hor
-            + 0.25 * np.roll(raw_hor, -1)
-        ).astype(np.float32)
-        self.sin_hor_az = np.sin(self.horizon_alt).astype(np.float32)
-        self.hor_dist_az = np.maximum(0.5, self.radii_km[max_idx + 1]).astype(np.float32)
+        self.horizon_alt = elev_angles[hor_idx, az_indices]
+        self.horizon_dist_km = dist_3d[hor_idx, az_indices]
+        self.horizon_lat = v_lat[1:][hor_idx, az_indices]
+        self.horizon_lon = v_lon[1:][hor_idx, az_indices]
+        self.horizon_elev_km = h_grid[1:][hor_idx, az_indices]
 
     def get_horizon_at_azimuth(self, az_rad: float) -> float:
-        az_ext = np.append(self.horizon_alt, self.horizon_alt[0])
-        return float(np.interp(az_rad % (2.0 * np.pi), self.az_grid, az_ext))
+        return float(np.interp(az_rad % (2.0 * np.pi), self.az_grid, self.horizon_alt))
+
+    def export_horizon_csv(self, filename="horizon.csv"):
+        """Zapisuje profil horyzontu geograficznego dla wszystkich azymutów do pliku CSV."""
+        with open(filename, mode="w", encoding="utf-8", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "Azimuth_deg",
+                "Horizon_Altitude_deg",
+                "Horizon_Distance_km",
+                "Horizon_Lat_deg",
+                "Horizon_Lon_deg",
+                "Horizon_Elevation_km",
+                "Observer_Lat_deg",
+                "Observer_Lon_deg",
+                "Observer_Elevation_km",
+                "Observer_Height_above_surface_m",
+            ])
+            for idx in range(self.n_az):
+                writer.writerow([
+                    f"{math.degrees(self.az_grid[idx]):.4f}",
+                    f"{math.degrees(self.horizon_alt[idx]):.6f}",
+                    f"{float(self.horizon_dist_km[idx]):.4f}",
+                    f"{float(self.horizon_lat[idx]):.6f}",
+                    f"{float(self.horizon_lon[idx]):.6f}",
+                    f"{float(self.horizon_elev_km[idx]):.5f}",
+                    f"{self.cached_lat:.6f}",
+                    f"{self.cached_lon:.6f}",
+                    f"{self.obs_elev_km:.5f}",
+                    f"{self.cached_eye_height_m:.2f}",
+                ])
+        print(f"[OK] Wyeksportowano dane horyzontu do: {filename}")
 
     def draw_3d(self, screen, cw, ch, cam_alt, cam_az, fov, sun_alt, sun_az, earth_alt,
                 wireframe=False, show_horizon_line=True):
-        scale_div = 2.6 if max(cw, ch) >= 1100 else 2.0
-        rw = max(320, int(cw / scale_div))
-        rh = max(200, int(ch / scale_div))
-
         fwd = np.array([
             math.cos(cam_alt) * math.cos(cam_az),
             math.cos(cam_alt) * math.sin(cam_az),
             math.sin(cam_alt),
-        ], dtype=np.float32)
-        world_up = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+        ])
+        world_up = np.array([0.0, 0.0, 1.0])
         right = np.cross(fwd, world_up)
         if np.linalg.norm(right) < 1e-6:
-            right = np.array([-math.sin(cam_az), math.cos(cam_az), 0.0], dtype=np.float32)
+            right = np.array([-math.sin(cam_az), math.cos(cam_az), 0.0])
         else:
             right /= np.linalg.norm(right)
         cam_up = np.cross(right, fwd)
 
-        focal = (rh / 2.0) / math.tan(fov / 2.0)
-        xs = (np.arange(rw, dtype=np.float32) - rw / 2.0) / focal
-        ys = (rh / 2.0 - np.arange(rh, dtype=np.float32)) / focal
+        z_cam = self.pts_enu @ fwd
+        x_cam = self.pts_enu @ right
+        y_cam = self.pts_enu @ cam_up
 
-        dx = fwd[0] + xs[None, :] * right[0] + ys[:, None] * cam_up[0]
-        dy = fwd[1] + xs[None, :] * right[1] + ys[:, None] * cam_up[1]
-        dz = fwd[2] + xs[None, :] * right[2] + ys[:, None] * cam_up[2]
-        inv_len = 1.0 / np.sqrt(dx * dx + dy * dy + dz * dz)
-        dx *= inv_len
-        dy *= inv_len
-        dz *= inv_len
+        near_z = 0.0001
+        focal = (ch / 2.0) / math.tan(fov / 2.0)
+        safe_z = np.where(z_cam > near_z, z_cam, near_z)
+        sx = np.clip(cw / 2.0 + (x_cam / safe_z) * focal, -16000.0, 16000.0)
+        sy = np.clip(ch / 2.0 - (y_cam / safe_z) * focal, -16000.0, 16000.0)
 
-        max_sin_hor = float(np.max(self.sin_hor_az))
-        row_min_dz = np.min(dz, axis=1)
-        active_rows = np.nonzero(row_min_dz <= max_sin_hor)[0]
+        sun_enu = np.array([
+            math.cos(sun_alt) * math.cos(sun_az),
+            math.cos(sun_alt) * math.sin(sun_az),
+            math.sin(sun_alt),
+        ])
+        ndotl = np.einsum("ijk,k->ij", self.normals_enu, sun_enu)
+        direct = np.power(np.maximum(0.0, ndotl), 0.85)
+        earthshine = 0.045 * max(0.0, math.sin(earth_alt))
+        ambient = 0.032 + earthshine
 
-        if len(active_rows) > 0:
-            y_start = int(active_rows[0])
-            dx_s = dx[y_start:]
-            dy_s = dy[y_start:]
-            dz_s = dz[y_start:]
+        light_intensity = (165.0 * ambient + 940.0 * direct)[..., None]
+        lit_rgb = np.clip(self.quad_rgb * light_intensity, 6, 248).astype(np.uint8)
 
-            az_all = np.arctan2(dy_s, dx_s) % (2.0 * math.pi)
-            az_f = az_all * (self.n_az / (2.0 * math.pi))
-            az0 = az_f.astype(np.int32) % self.n_az
-            az1 = (az0 + 1) % self.n_az
-            waz = az_f - np.floor(az_f)
+        for i in range(self.n_r - 2, -1, -1):
+            z00, z10 = z_cam[i, :-1], z_cam[i + 1, :-1]
+            z11, z01 = z_cam[i + 1, 1:], z_cam[i, 1:]
+            in_front = (z00 > near_z) & (z10 > near_z) & (z11 > near_z) & (z01 > near_z)
+            if not np.any(in_front):
+                continue
 
-            sin_hor_px = self.sin_hor_az[az0] * (1.0 - waz) + self.sin_hor_az[az1] * waz
-            edge_alpha = np.clip((sin_hor_px - dz_s) * focal * 1.4, 0.0, 1.0)
-            valid = edge_alpha > 0.01
+            x00, y00 = sx[i, :-1], sy[i, :-1]
+            x10, y10 = sx[i + 1, :-1], sy[i + 1, :-1]
+            x11, y11 = sx[i + 1, 1:], sy[i + 1, 1:]
+            x01, y01 = sx[i, 1:], sy[i, 1:]
 
-            if np.any(valid):
-                dz_v = dz_s[valid]
-                dx_v = dx_s[valid]
-                dy_v = dy_s[valid]
-                az0_v = az0[valid]
-                az1_v = az1[valid]
-                waz_v = waz[valid]
+            min_x = np.minimum(np.minimum(x00, x10), np.minimum(x11, x01))
+            max_x = np.maximum(np.maximum(x00, x10), np.maximum(x11, x01))
+            min_y = np.minimum(np.minimum(y00, y10), np.minimum(y11, y01))
+            max_y = np.maximum(np.maximum(y00, y10), np.maximum(y11, y01))
 
-                R_obs = self.obs_radius_km
-                b = R_obs * dz_v
-                c0 = R_obs * R_obs - R_MOON * R_MOON
-                disc = np.maximum(0.0, b * b - c0)
-                t_hit = -b - np.sqrt(disc)
+            visible = in_front & (max_x >= -80) & (min_x <= cw + 80) & (max_y >= -80) & (min_y <= ch + 80)
+            vis_idx = np.nonzero(visible)[0]
+            row_col = lit_rgb[i]
 
-                hor_dist_v = self.hor_dist_az[az0_v] * (1.0 - waz_v) + self.hor_dist_az[az1_v] * waz_v
-                horiz_speed = np.sqrt(np.maximum(1e-8, dx_v * dx_v + dy_v * dy_v))
-                r_ground = np.clip(t_hit * horiz_speed, 0.0, hor_dist_v)
+            for j in vis_idx:
+                poly = [
+                    (int(x00[j]), int(y00[j])),
+                    (int(x10[j]), int(y10[j])),
+                    (int(x11[j]), int(y11[j])),
+                    (int(x01[j]), int(y01[j])),
+                ]
+                c = (int(row_col[j, 0]), int(row_col[j, 1]), int(row_col[j, 2]))
+                pygame.draw.polygon(screen, c, poly)
+                if wireframe:
+                    ec = (min(255, c[0] + 35), min(255, c[1] + 35), min(255, c[2] + 40))
+                    pygame.draw.polygon(screen, ec, poly, 1)
 
-                lut_idx = np.minimum(self.LUT_SIZE - 1, (np.sqrt(r_ground) * self.inv_sqrt_scale).astype(np.int32))
-                r0 = self.lut_idx_lo[lut_idx]
-                r1 = np.minimum(r0 + 1, self.n_r - 1)
-                wr = self.lut_wr[lut_idx]
-                fade_fine = self.lut_fade_fine[lut_idx]
-                fade_med = self.lut_fade_med[lut_idx]
-
-                w00 = (1.0 - wr) * (1.0 - waz_v)
-                w01 = (1.0 - wr) * waz_v
-                w10 = wr * (1.0 - waz_v)
-                w11 = wr * waz_v
-
-                base_rgb = (
-                    self.alb_polar[r0, az0_v] * w00[:, None]
-                    + self.alb_polar[r0, az1_v] * w01[:, None]
-                    + self.alb_polar[r1, az0_v] * w10[:, None]
-                    + self.alb_polar[r1, az1_v] * w11[:, None]
-                )
-                n_vec = (
-                    self.norm_polar[r0, az0_v] * w00[:, None]
-                    + self.norm_polar[r0, az1_v] * w01[:, None]
-                    + self.norm_polar[r1, az0_v] * w10[:, None]
-                    + self.norm_polar[r1, az1_v] * w11[:, None]
-                )
-
-                inv_hs = r_ground / horiz_speed
-                rel_n = dx_v * inv_hs
-                rel_e = dy_v * inv_hs
-
-                ix_fine = (rel_n * 2400.0).astype(np.int32) & 511
-                iy_fine = (rel_e * 2400.0).astype(np.int32) & 511
-                ix_med = (rel_n * 145.0).astype(np.int32) & 511
-                iy_med = (rel_e * 145.0).astype(np.int32) & 511
-
-                tex_mod = (
-                    1.0
-                    + (self.det_alb[ix_fine, iy_fine] - 1.0) * fade_fine
-                    + (self.det_alb[ix_med, iy_med] - 1.0) * fade_med
-                )
-                n_vec[:, 0] += self.det_bn[ix_fine, iy_fine] * fade_fine + 0.65 * self.det_bn[ix_med, iy_med] * fade_med
-                n_vec[:, 1] += self.det_be[ix_fine, iy_fine] * fade_fine + 0.65 * self.det_be[ix_med, iy_med] * fade_med
-                n_vec /= np.maximum(np.linalg.norm(n_vec, axis=-1, keepdims=True), 1e-6)
-
-                sun_enu = np.array([
-                    math.cos(sun_alt) * math.cos(sun_az),
-                    math.cos(sun_alt) * math.sin(sun_az),
-                    math.sin(sun_alt),
-                ], dtype=np.float32)
-                sun_hor = self.get_horizon_at_azimuth(sun_az)
-                sun_above = max(0.0, min(1.0, (sun_alt - (sun_hor - math.radians(0.35))) / math.radians(0.60)))
-
-                ndotl = np.maximum(0.0, n_vec @ sun_enu)
-                lunar_reflectance = (ndotl / (ndotl + 0.16)) * 1.16 * sun_above
-                earthshine = 0.045 * max(0.0, math.sin(earth_alt))
-                ambient = 0.032 + earthshine
-
-                intensity = (165.0 * ambient + 940.0 * lunar_reflectance) * tex_mod
-                rgb_out = np.clip(base_rgb * intensity[:, None], 6, 248).astype(np.uint8)
-
-                out_rgba = np.zeros((rh, rw, 4), dtype=np.uint8)
-                sub_out = out_rgba[y_start:]
-                sub_out[valid, :3] = rgb_out
-                sub_out[valid, 3] = (edge_alpha[valid] * 255.0).astype(np.uint8)
-
-                surf = pygame.image.frombuffer(out_rgba.tobytes(), (rw, rh), "RGBA")
-                surf_full = pygame.transform.smoothscale(surf, (cw, ch))
-                screen.blit(surf_full, (0, 0))
-
-        # Konwersja do natywnych typów float Pythona (wymagane przez pygame.draw.aalines w Python 3.13 / NumPy 2.x)
-        fx, fy, fz = float(fwd[0]), float(fwd[1]), float(fwd[2])
-        rx, ry, rz = float(right[0]), float(right[1]), float(right[2])
-        ux, uy, uz = float(cam_up[0]), float(cam_up[1]), float(cam_up[2])
-        focal_full = float((ch / 2.0) / math.tan(fov / 2.0))
-        half_w = float(cw) / 2.0
-        half_h = float(ch) / 2.0
-
-        if wireframe:
-            for r_val in (0.02, 0.1, 0.5, 2.0, 10.0, 50.0, 150.0):
-                if r_val > self.max_r_km:
-                    continue
-                pts_ring = []
-                for az_np in self.az_grid[::6]:
-                    az_v = float(az_np)
-                    pn = r_val * math.cos(az_v)
-                    pe = r_val * math.sin(az_v)
-                    pu = -0.5 * (r_val * r_val) / R_MOON - float(self.alt_above_km)
-                    zc = pn * fx + pe * fy + pu * fz
-                    if zc > 0.002:
-                        xc = pn * rx + pe * ry + pu * rz
-                        yc = pn * ux + pe * uy + pu * uz
-                        sx = float(half_w + (xc / zc) * focal_full)
-                        sy = float(half_h - (yc / zc) * focal_full)
-                        if math.isfinite(sx) and math.isfinite(sy):
-                            pts_ring.append((sx, sy))
-                    else:
-                        if len(pts_ring) > 1:
-                            pygame.draw.aalines(screen, (95, 130, 165), False, pts_ring)
-                        pts_ring = []
-                if len(pts_ring) > 1:
-                    pygame.draw.aalines(screen, (95, 130, 165), False, pts_ring)
-
-        if show_horizon_line and self.horizon_alt is not None:
+        if show_horizon_line:
             h_pts = []
-            for h_alt_np, h_az_np in zip(self.horizon_alt, self.az_grid[:-1]):
-                h_alt = float(h_alt_np)
-                h_az = float(h_az_np)
+            for h_alt, h_az in zip(self.horizon_alt, self.az_grid):
                 px = math.cos(h_alt) * math.cos(h_az)
                 py = math.cos(h_alt) * math.sin(h_az)
                 pz = math.sin(h_alt)
-                zc = px * fx + py * fy + pz * fz
+                p = np.array([px, py, pz])
+                zc = float(np.dot(p, fwd))
                 if zc > 0.05:
-                    xc = px * rx + py * ry + pz * rz
-                    yc = px * ux + py * uy + pz * uz
-                    sx = float(half_w + (xc / zc) * focal_full)
-                    sy = float(half_h - (yc / zc) * focal_full)
-                    if math.isfinite(sx) and math.isfinite(sy):
-                        h_pts.append((sx, sy))
+                    xc = float(np.dot(p, right))
+                    yc = float(np.dot(p, cam_up))
+                    h_pts.append((cw / 2.0 + (xc / zc) * focal, ch / 2.0 - (yc / zc) * focal))
                 else:
                     if len(h_pts) > 1:
-                        pygame.draw.aalines(screen, (85, 160, 210), False, h_pts)
+                        pygame.draw.lines(screen, (90, 175, 220), False, h_pts, 2)
                     h_pts = []
             if len(h_pts) > 1:
-                pygame.draw.aalines(screen, (85, 160, 210), False, h_pts)
+                pygame.draw.lines(screen, (90, 175, 220), False, h_pts, 2)
 
 
 def draw_telescopic_sun(screen, sx, sy, r_sun_exact, cw, ch):
-    """Renderuje Słońce z koroną i pociemnieniem brzegowym przy dowolnym powiększeniu."""
-    r_sun = max(3.0, r_sun_exact)
-    halo_r = int(min(max(r_sun * 2.5, 16), max(cw, ch)))
+    """Renderuje tarczę Słońca z koroną i pociemnieniem brzegowym przy każdym powiększeniu."""
+    r_sun = max(4.0, r_sun_exact)
+    halo_mult = 3.8 if r_sun < 20.0 else 2.5
+    halo_r = int(min(max(r_sun * halo_mult, 22), max(cw, ch)))
 
     x0 = max(0, int(sx - halo_r))
     x1 = min(cw, int(sx + halo_r) + 1)
@@ -662,19 +543,23 @@ def draw_telescopic_sun(screen, sx, sy, r_sun_exact, cw, ch):
         return
 
     w_box, h_box = x1 - x0, y1 - y0
-    ss = 1 if halo_r <= 180 else (2 if halo_r <= 450 else 3)
+    if r_sun < 18.0:
+        grid_w, grid_h = max(8, w_box * 3), max(8, h_box * 3)
+    else:
+        ss = 1 if halo_r <= 180 else (2 if halo_r <= 450 else 3)
+        grid_w, grid_h = max(2, w_box // ss), max(2, h_box // ss)
 
-    xs = (np.linspace(x0, x1 - 1, max(2, w_box // ss), dtype=np.float32) - sx) / r_sun
-    ys = (np.linspace(y0, y1 - 1, max(2, h_box // ss), dtype=np.float32) - sy) / r_sun
+    xs = (np.linspace(x0, x1 - 1, grid_w, dtype=np.float32) - sx) / r_sun
+    ys = (np.linspace(y0, y1 - 1, grid_h, dtype=np.float32) - sy) / r_sun
     gx, gy = np.meshgrid(xs, ys)
     dist = np.sqrt(gx * gx + gy * gy)
 
-    img = np.zeros((ys.shape[0], xs.shape[0], 4), dtype=np.uint8)
+    img = np.zeros((grid_h, grid_w, 4), dtype=np.uint8)
 
     disk = dist <= 1.0
     if np.any(disk):
         mu = np.sqrt(np.clip(1.0 - dist[disk] ** 2, 0.0, 1.0))
-        limb_dark = 0.42 + 0.58 * np.power(mu, 0.55)
+        limb_dark = 0.45 + 0.55 * np.power(mu, 0.50)
         if r_sun > 18.0:
             granulation = 0.028 * np.sin(gx[disk] * 55.0) * np.cos(gy[disk] * 55.0)
             limb_dark = np.clip(limb_dark + granulation, 0.25, 1.05)
@@ -683,26 +568,28 @@ def draw_telescopic_sun(screen, sx, sy, r_sun_exact, cw, ch):
         img[disk, 2] = np.clip(218.0 * np.power(limb_dark, 1.15), 0, 255).astype(np.uint8)
         img[disk, 3] = 255
 
-    corona = (~disk) & (dist <= 2.5)
+    corona = (~disk) & (dist <= halo_mult)
     if np.any(corona):
-        t_c = (dist[corona] - 1.0) / 1.5
-        glow = np.exp(-3.4 * t_c) * (1.0 - t_c)
+        t_c = (dist[corona] - 1.0) / (halo_mult - 1.0)
+        glow = np.exp(-2.6 * t_c) * (1.0 - t_c)
         img[corona, 0] = 255
-        img[corona, 1] = 225
-        img[corona, 2] = 155
-        img[corona, 3] = np.clip(195.0 * glow, 0, 255).astype(np.uint8)
+        img[corona, 1] = 228
+        img[corona, 2] = 165
+        img[corona, 3] = np.clip(220.0 * glow, 0, 255).astype(np.uint8)
 
-    surf = pygame.image.frombuffer(img.tobytes(), (xs.shape[0], ys.shape[0]), "RGBA")
-    if ss > 1:
+    surf = pygame.image.frombuffer(img.tobytes(), (grid_w, grid_h), "RGBA")
+    if (grid_w, grid_h) != (w_box, h_box):
         surf = pygame.transform.smoothscale(surf, (w_box, h_box))
     screen.blit(surf, (x0, y0))
 
 
-def draw_telescopic_earth(screen, ex, ey, r_earth_exact, cw, ch, sun_earth_dir, spin_angle,
+def draw_telescopic_earth(screen, ex, ey, r_earth_exact, cw, ch,
+                          cam_right, cam_up, dir_earth_enu, sun_from_earth_enu,
+                          ecef_axes_enu, cloud_time,
                           day_arr=None, night_arr=None, clouds_arr=None):
-    """Wektorowy renderer tarczy Ziemi 3D skalujący się prawidłowo przy każdym przybliżeniu."""
-    r_earth = max(4.0, r_earth_exact)
-    pad = int(max(3, r_earth * 0.05))
+    """Wektorowy renderer tarczy Ziemi 3D z dokładną fazą, teksturą dnia/nocy i ruchem chmur."""
+    r_earth = max(6.5, r_earth_exact)
+    pad = int(max(4, r_earth * 0.14))
     r_outer = r_earth + pad
 
     x0 = max(0, int(ex - r_outer))
@@ -713,10 +600,14 @@ def draw_telescopic_earth(screen, ex, ey, r_earth_exact, cw, ch, sun_earth_dir, 
         return
 
     w_box, h_box = x1 - x0, y1 - y0
-    ss = 1 if r_earth <= 160 else (2 if r_earth <= 420 else 3)
+    if r_earth < 24.0:
+        grid_w, grid_h = max(8, w_box * 4), max(8, h_box * 4)
+    else:
+        ss = 1 if r_earth <= 160 else (2 if r_earth <= 420 else 3)
+        grid_w, grid_h = max(2, w_box // ss), max(2, h_box // ss)
 
-    xs = (np.linspace(x0, x1 - 1, max(2, w_box // ss), dtype=np.float32) - ex) / r_earth
-    ys = (np.linspace(y0, y1 - 1, max(2, h_box // ss), dtype=np.float32) - ey) / r_earth
+    xs = (np.linspace(x0, x1 - 1, grid_w, dtype=np.float32) - ex) / r_earth
+    ys = (np.linspace(y0, y1 - 1, grid_h, dtype=np.float32) - ey) / r_earth
     gx, gy = np.meshgrid(xs, ys)
     dist_sq = gx * gx + gy * gy
     mask = dist_sq <= 1.0
@@ -726,21 +617,44 @@ def draw_telescopic_earth(screen, ex, ey, r_earth_exact, cw, ch, sun_earth_dir, 
     gz = np.zeros_like(dist_sq)
     gz[mask] = np.sqrt(1.0 - dist_sq[mask])
 
-    px = gz[mask]
-    py = -gx[mask]
-    pz = -gy[mask]
+    # Baza ekranowa tarczy Ziemi w układzie ENU obserwatora:
+    # e_z_cam: od środka Ziemi w stronę obserwatora (+gz)
+    # e_x_cam: w prawo na ekranie (+gx)
+    # e_y_cam: w górę na ekranie (-gy)
+    e_z_cam = -dir_earth_enu
+    e_x_cam = cam_right - np.dot(cam_right, e_z_cam) * e_z_cam
+    nx_norm = np.linalg.norm(e_x_cam)
+    if nx_norm < 1e-6:
+        e_x_cam = np.cross(cam_up, e_z_cam)
+        nx_norm = np.linalg.norm(e_x_cam)
+    e_x_cam /= nx_norm
+    e_y_cam = np.cross(e_z_cam, e_x_cam)
+
+    gx_m = gx[mask][:, None]
+    gy_m = gy[mask][:, None]
+    gz_m = gz[mask][:, None]
+
+    # Zewnętrzny wektor normalny powierzchni kuli ziemskiej w układzie ENU
+    n_enu = gx_m * e_x_cam[None, :] - gy_m * e_y_cam[None, :] + gz_m * e_z_cam[None, :]
+
+    # Rzut na obracający się układ geograficzny Ziemi (ECEF)
+    x_ecef, y_ecef, z_ecef = ecef_axes_enu
+    px = n_enu @ x_ecef
+    py = n_enu @ y_ecef
+    pz = n_enu @ z_ecef
 
     lat_pt = np.arcsin(np.clip(pz, -1.0, 1.0))
-    lon_pt = (np.arctan2(py, px) + spin_angle + np.pi) % (2.0 * np.pi) - np.pi
+    lon_pt = np.arctan2(py, px)
 
     u = (lon_pt + np.pi) / (2.0 * np.pi)
     v = (np.pi * 0.5 - lat_pt) / np.pi
 
+    # Próbkowanie tekstury dziennej
     if day_arr is not None:
         dh, dw = day_arr.shape[:2]
         tx = (u * dw).astype(np.int32) % dw
-        ty = (v * dh).astype(np.int32) % dh
-        rgb = day_arr[ty, tx].astype(np.float32)
+        ty = np.clip((v * dh).astype(np.int32), 0, dh - 1)
+        day_rgb = day_arr[ty, tx].astype(np.float32)
     else:
         continent = (
             np.sin(lon_pt * 2.1 + 0.4) * np.cos(lat_pt * 2.3)
@@ -749,46 +663,102 @@ def draw_telescopic_earth(screen, ex, ey, r_earth_exact, cw, ch, sun_earth_dir, 
         )
         is_land = continent > 0.18
         is_ice = np.abs(lat_pt) > np.radians(72.0 - 8.0 * continent)
-        rgb = np.empty((px.shape[0], 3), dtype=np.float32)
-        rgb[:] = (22.0, 72.0, 158.0)
-        rgb[is_land] = (64.0, 118.0, 62.0)
-        rgb[is_ice] = (235.0, 242.0, 248.0)
+        day_rgb = np.empty((px.shape[0], 3), dtype=np.float32)
+        day_rgb[:] = (22.0, 72.0, 158.0)
+        day_rgb[is_land] = (64.0, 118.0, 62.0)
+        day_rgb[is_ice] = (235.0, 242.0, 248.0)
 
-    cos_sun = px * sun_earth_dir[0] + py * sun_earth_dir[1] + pz * sun_earth_dir[2]
-    day_side = cos_sun > 0.0
+    # Próbkowanie tekstury nocnej (światła miast)
+    if night_arr is not None:
+        nh, nw = night_arr.shape[:2]
+        nx = (u * nw).astype(np.int32) % nw
+        ny = np.clip((v * nh).astype(np.int32), 0, nh - 1)
+        night_rgb = night_arr[ny, nx].astype(np.float32) * 1.15
+    else:
+        night_rgb = day_rgb * 0.06
 
-    out_rgb = np.zeros_like(rgb)
-    if np.any(day_side):
-        if clouds_arr is not None:
-            ch_t, cw_t = clouds_arr.shape[:2]
-            cx = (u[day_side] * cw_t).astype(np.int32) % cw_t
-            cy = (v[day_side] * ch_t).astype(np.int32) % ch_t
-            cf = (clouds_arr[cy, cx, 0].astype(np.float32) / 255.0) * 0.75
-            rgb[day_side] = rgb[day_side] * (1.0 - cf[:, None]) + 255.0 * cf[:, None]
-        factor = np.clip(cos_sun[day_side], 0.12, 1.0)[:, None]
-        out_rgb[day_side] = rgb[day_side] * factor
+    # Kosinus kąta padania promieni słonecznych (faza Ziemi)
+    cos_sun = n_enu @ sun_from_earth_enu
 
-    if np.any(~day_side):
-        n_idx = ~day_side
-        if night_arr is not None:
-            nh, nw = night_arr.shape[:2]
-            nx = (u[n_idx] * nw).astype(np.int32) % nw
-            ny = (v[n_idx] * nh).astype(np.int32) % nh
-            out_rgb[n_idx] = night_arr[ny, nx].astype(np.float32)
-        else:
-            out_rgb[n_idx] = rgb[n_idx] * 0.05
+    # Płynna funkcja przejścia przez terminator (-0.10 .. +0.08)
+    twilight_t = np.clip((cos_sun + 0.10) / 0.18, 0.0, 1.0)
+    day_blend = twilight_t * twilight_t * (3.0 - 2.0 * twilight_t)
 
-    limb = np.power(1.0 - gz[mask], 3.0) * np.clip(cos_sun + 0.25, 0.0, 1.0)
-    out_rgb[:, 0] += 70.0 * limb
-    out_rgb[:, 1] += 140.0 * limb
-    out_rgb[:, 2] += 235.0 * limb
+    # Cieniowanie strony dziennej + ciepły odcień zachodu/wschodu słońca przy terminatorze
+    sun_diffuse = np.power(np.clip(cos_sun, 0.0, 1.0), 0.78)
+    terminator_glow = np.exp(-((cos_sun - 0.02) / 0.11) ** 2) * (cos_sun > -0.10)
 
-    img = np.zeros((ys.shape[0], xs.shape[0], 4), dtype=np.uint8)
+    lit_day_rgb = day_rgb * (0.08 + 0.96 * sun_diffuse)[:, None]
+    lit_day_rgb[:, 0] += 42.0 * terminator_glow
+    lit_day_rgb[:, 1] += 14.0 * terminator_glow
+
+    # Animacja chmur względem powierzchni Ziemi (pasaty, prądy strumieniowe i fale Rossby'ego)
+    cloud_alpha = None
+    if clouds_arr is not None:
+        ch_t, cw_t = clouds_arr.shape[:2]
+
+        # Warstwa 1: główny system chmur z wiatrem strefowym (trade winds & westerlies) + falą
+        zonal_shear_1 = cloud_time * (0.016 * np.cos(3.0 * lat_pt) - 0.007 * np.cos(lat_pt))
+        meridional_wave_1 = 0.0055 * np.sin(lon_pt * 3.0 + cloud_time * 0.42) * np.cos(lat_pt)
+        u_c1 = (u + zonal_shear_1) % 1.0
+        v_c1 = np.clip(v + meridional_wave_1, 0.0, 0.9999)
+        cx1 = (u_c1 * cw_t).astype(np.int32) % cw_t
+        cy1 = (v_c1 * ch_t).astype(np.int32)
+        c1 = clouds_arr[cy1, cx1, 0].astype(np.float32) / 255.0
+
+        # Warstwa 2: wysokie chmury cirrus w prądach strumieniowych (efekt głębi i paralaksy)
+        zonal_shear_2 = cloud_time * (0.028 * (np.sin(2.0 * lat_pt) ** 2) + 0.009) + 0.37
+        meridional_wave_2 = -0.0045 * np.cos(lon_pt * 4.0 - cloud_time * 0.58) * np.cos(lat_pt) + 0.11
+        u_c2 = (u + zonal_shear_2) % 1.0
+        v_c2 = np.clip(v + meridional_wave_2, 0.0, 0.9999)
+        cx2 = (u_c2 * cw_t).astype(np.int32) % cw_t
+        cy2 = (v_c2 * ch_t).astype(np.int32)
+        c2 = clouds_arr[cy2, cx2, 0].astype(np.float32) / 255.0
+
+        cloud_alpha = np.clip(c1 * 0.82 + c2 * 0.30, 0.0, 0.95)
+
+        # Na oświetlonej części chmury są jasne i odbijają światło słoneczne oraz złoty blask terminatora
+        cloud_lit_r = 252.0 * (0.10 + 0.94 * sun_diffuse) + 55.0 * terminator_glow
+        cloud_lit_g = 253.0 * (0.10 + 0.94 * sun_diffuse) + 20.0 * terminator_glow
+        cloud_lit_b = 255.0 * (0.11 + 0.93 * sun_diffuse)
+        cloud_lit_rgb = np.stack([cloud_lit_r, cloud_lit_g, cloud_lit_b], axis=-1)
+
+        cf_day = cloud_alpha[:, None]
+        lit_day_rgb = lit_day_rgb * (1.0 - cf_day) + cloud_lit_rgb * cf_day
+
+        # Na ciemnej części chmury delikatnie przesłaniają światła miast pod nimi
+        night_rgb = night_rgb * (1.0 - 0.55 * cloud_alpha)[:, None]
+
+    # Połączenie strony nocnej i oświetlonej
+    out_rgb = night_rgb * (1.0 - day_blend)[:, None] + lit_day_rgb * day_blend[:, None]
+
+    # Rozpraszanie Rayleigha na krawędzi atmosfery Ziemi (tylko po stronie oświetlonej / zmierzchowej)
+    limb = np.power(1.0 - gz[mask], 2.6) * np.clip(cos_sun + 0.28, 0.0, 1.0)
+    out_rgb[:, 0] += 75.0 * limb
+    out_rgb[:, 1] += 155.0 * limb
+    out_rgb[:, 2] += 250.0 * limb
+
+    img = np.zeros((grid_h, grid_w, 4), dtype=np.uint8)
     img[mask, :3] = np.clip(out_rgb, 0, 255).astype(np.uint8)
     img[mask, 3] = 255
 
-    surf = pygame.image.frombuffer(img.tobytes(), (xs.shape[0], ys.shape[0]), "RGBA")
-    if ss > 1:
+    # Miękka zewnętrzna aureola atmosferyczna wokół tarczy Ziemi
+    halo_mask = (~mask) & (dist_sq <= 1.28)
+    if np.any(halo_mask):
+        dist_h = np.sqrt(dist_sq[halo_mask])
+        h_fade = np.clip(1.0 - (dist_h - 1.0) / 0.13, 0.0, 1.0) ** 2
+        n_halo = (
+            gx[halo_mask][:, None] * e_x_cam[None, :]
+            - gy[halo_mask][:, None] * e_y_cam[None, :]
+        )
+        sun_facing = np.clip((n_halo @ sun_from_earth_enu) + 0.32, 0.06, 1.0)
+        img[halo_mask, 0] = 75
+        img[halo_mask, 1] = 155
+        img[halo_mask, 2] = 250
+        img[halo_mask, 3] = np.clip(155.0 * h_fade * sun_facing, 0, 255).astype(np.uint8)
+
+    surf = pygame.image.frombuffer(img.tobytes(), (grid_w, grid_h), "RGBA")
+    if (grid_w, grid_h) != (w_box, h_box):
         surf = pygame.transform.smoothscale(surf, (w_box, h_box))
     screen.blit(surf, (x0, y0))
 
@@ -805,9 +775,13 @@ def load_year_data(year):
                 times.append(datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S"))
                 rows.append([float(x) for x in row[1:7]])
         coords = np.array(rows, dtype=np.float64)
-        mean_moon_dist = float(np.mean(np.linalg.norm(coords[:, 3:6], axis=1)))
-        if mean_moon_dist > 1e7:
-            coords *= 0.001
+
+        moon_dist_med = float(np.median(np.linalg.norm(coords[:, 3:6], axis=1)))
+        if moon_dist_med > 1e7:
+            coords /= 1000.0
+        elif moon_dist_med < 1.0:
+            coords *= 149597870.7
+
         print(f"[OK] Wczytano dane dla roku {year} z: {filepath}")
     else:
         print(f"[OSTRZEŻENIE] Nie znaleziono '{filepath}'. Generuję dane testowe dla roku {year}...")
@@ -902,8 +876,31 @@ def get_topocentric_vectors(year_data, time_idx_float, lat_deg, lon_deg, obs_rad
     earth_alt, earth_az, earth_dist = to_alt_az(vec_earth)
     sun_alt, sun_az, sun_dist = to_alt_az(vec_sun)
 
-    sun_earth_body = sun_body - earth_body
-    sun_earth_dir = sun_earth_body / np.linalg.norm(sun_earth_body)
+    def ecl_to_enu(v_ecl):
+        v_b = R_body @ v_ecl
+        return np.array([v_b @ north, v_b @ east, v_b @ up])
+
+    # Kierunek od środka Ziemi do Słońca w układzie ENU obserwatora
+    sun_from_earth_ecl = sun_geo / np.linalg.norm(sun_geo)
+    sun_from_earth_enu = ecl_to_enu(sun_from_earth_ecl)
+
+    # Baza geograficzna Ziemi (ECEF) w układzie ENU obserwatora (z nachyleniem osi 23.44° i czasem GMST)
+    x_eci_ecl = np.array([1.0, 0.0, 0.0])
+    y_eci_ecl = np.array([0.0, math.cos(OBLIQUITY), -math.sin(OBLIQUITY)])
+    z_eci_ecl = np.array([0.0, math.sin(OBLIQUITY), math.cos(OBLIQUITY)])
+
+    gmst = math.radians((280.46061837 + 360.98564736629 * d_j2000) % 360.0)
+    cg, sg = math.cos(gmst), math.sin(gmst)
+
+    x_ecef_ecl = cg * x_eci_ecl + sg * y_eci_ecl
+    y_ecef_ecl = -sg * x_eci_ecl + cg * y_eci_ecl
+    z_ecef_ecl = z_eci_ecl
+
+    ecef_axes_enu = (
+        ecl_to_enu(x_ecef_ecl),
+        ecl_to_enu(y_ecef_ecl),
+        ecl_to_enu(z_ecef_ecl),
+    )
 
     current_time = times[idx0] + (times[idx1] - times[idx0]) * frac
     return {
@@ -913,7 +910,8 @@ def get_topocentric_vectors(year_data, time_idx_float, lat_deg, lon_deg, obs_rad
         "earth": (earth_alt, earth_az, earth_dist),
         "sun": (sun_alt, sun_az, sun_dist),
         "obs_bases": (north, east, up),
-        "sun_earth_dir": sun_earth_dir,
+        "sun_from_earth_enu": sun_from_earth_enu,
+        "ecef_axes_enu": ecef_axes_enu,
     }
 
 
@@ -924,12 +922,6 @@ class Slider:
         self.label, self.fmt, self.is_int = label, fmt, is_int
         self.power = power
         self.dragging = False
-
-    def _val_to_ratio(self):
-        if self.max_val <= self.min_val:
-            return 0.0
-        norm = max(0.0, min(1.0, (self.val - self.min_val) / (self.max_val - self.min_val)))
-        return norm ** (1.0 / self.power)
 
     def handle_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -946,12 +938,17 @@ class Slider:
 
     def update_val(self, mx):
         ratio = max(0.0, min(1.0, (mx - self.rect.x) / self.rect.width))
-        val = self.min_val + (ratio ** self.power) * (self.max_val - self.min_val)
+        curved = ratio ** self.power
+        val = self.min_val + curved * (self.max_val - self.min_val)
         self.val = int(round(val)) if self.is_int else val
 
     def draw(self, screen, font, custom_text=None):
         pygame.draw.rect(screen, (60, 65, 75), self.rect, border_radius=4)
-        ratio = self._val_to_ratio()
+        if self.max_val > self.min_val:
+            linear_ratio = max(0.0, min(1.0, (self.val - self.min_val) / (self.max_val - self.min_val)))
+            ratio = linear_ratio ** (1.0 / self.power)
+        else:
+            ratio = 0.0
         fill_rect = pygame.Rect(self.rect.x, self.rect.y, int(self.rect.width * ratio), self.rect.height)
         pygame.draw.rect(screen, (100, 160, 230), fill_rect, border_radius=4)
         pygame.draw.circle(screen, (240, 245, 255), (self.rect.x + int(self.rect.width * ratio), self.rect.centery), 8)
@@ -961,11 +958,17 @@ class Slider:
         screen.blit(txt, (self.rect.x, self.rect.y - 20))
 
 
+def format_height_m(height_m: float) -> str:
+    if height_m < 1000.0:
+        return f"{height_m:.1f} m"
+    return f"{height_m / 1000.0:.2f} km"
+
+
 def main():
     pygame.init()
     W, H = 1280, 800
     screen = pygame.display.set_mode((W, H), pygame.RESIZABLE)
-    pygame.display.set_caption("Lunar Stellarium - Gładka Tekstura Powierzchni Księżyca")
+    pygame.display.set_caption("Lunar Stellarium - Tekstura Powierzchni Księżyca i Zoom Teleskopowy")
     clock = pygame.time.Clock()
     font = pygame.font.SysFont("Consolas", 15)
     font_big = pygame.font.SysFont("Consolas", 18, bold=True)
@@ -982,23 +985,25 @@ def main():
     base_fov = math.radians(75.0)
     fov = base_fov
     target_fov = base_fov
-    MIN_FOV = math.radians(0.15)
+    MIN_FOV = math.radians(0.20)
     MAX_FOV = math.radians(115.0)
 
     dragging_sky = False
     last_mouse = (0, 0)
     playing = False
     play_speed = 24.0
+    anim_time = 0.0
+    status_msg = ""
+    status_timer = 0.0
 
     current_year = 2000
     year_data = load_year_data(current_year)
 
     slider_year = Slider(30, H - 45, 250, 10, 2000, 2100, current_year, "Rok", is_int=True)
     slider_time = Slider(300, H - 45, W - 330, 10, 0, len(year_data["times"]) - 1, 0, "Czas w roku")
-
-    slider_lat = Slider(30, 40, 250, 10, -90.0, 90.0, -43.31, "Szerokość (Lat)", "{:+.2f}°")
-    slider_lon = Slider(30, 90, 250, 10, -180.0, 180.0, -11.36, "Długość (Lon)", "{:+.2f}°")
-    slider_alt = Slider(30, 140, 250, 10, 0.002, 200.0, 0.002, "Wysokość nad pow.", power=2.6)
+    slider_lat = Slider(30, 40, 240, 10, -90.0, 90.0, -43.31, "Szerokość (Lat)", "{:+.2f}°")
+    slider_lon = Slider(30, 90, 240, 10, -180.0, 180.0, -11.36, "Długość (Lon)", "{:+.2f}°")
+    slider_height = Slider(30, 140, 240, 10, 2.0, 50000.0, 2.0, "Wysokość nad pow.", power=3.0)
     location_name = "Krater Tycho"
 
     np.random.seed(42)
@@ -1032,11 +1037,7 @@ def main():
             min(math.pi / 2.0 - 0.01, cam_alt + (math.atan2(dy_px, focal_old) - math.atan2(dy_px, focal_new))),
         )
 
-    def project_point(alt, az, cw, ch):
-        px = math.cos(alt) * math.cos(az)
-        py = math.cos(alt) * math.sin(az)
-        pz = math.sin(alt)
-
+    def get_camera_basis():
         fwd = np.array([
             math.cos(cam_alt) * math.cos(cam_az),
             math.cos(cam_alt) * math.sin(cam_az),
@@ -1049,21 +1050,23 @@ def main():
         else:
             right /= np.linalg.norm(right)
         cam_up = np.cross(right, fwd)
+        return fwd, right, cam_up
 
+    def project_point(alt, az, cw, ch, cam_basis):
+        px = math.cos(alt) * math.cos(az)
+        py = math.cos(alt) * math.sin(az)
+        pz = math.sin(alt)
+
+        fwd, right, cam_up = cam_basis
         p = np.array([px, py, pz])
-        z_cam = float(np.dot(p, fwd))
+        z_cam = np.dot(p, fwd)
         if z_cam <= 0.05:
             return None
 
-        x_cam = float(np.dot(p, right))
-        y_cam = float(np.dot(p, cam_up))
-        focal = float((ch / 2.0) / math.tan(fov / 2.0))
-        return (
-            float(cw / 2.0 + (x_cam / z_cam) * focal),
-            float(ch / 2.0 - (y_cam / z_cam) * focal),
-            z_cam,
-            focal,
-        )
+        x_cam = np.dot(p, right)
+        y_cam = np.dot(p, cam_up)
+        focal = (ch / 2.0) / math.tan(fov / 2.0)
+        return (cw / 2.0 + (x_cam / z_cam) * focal, ch / 2.0 - (y_cam / z_cam) * focal, z_cam, focal)
 
     presets = {
         pygame.K_1: ("Krater Tycho", -43.31, -11.36),
@@ -1076,7 +1079,10 @@ def main():
     running = True
     while running:
         dt = clock.tick(60) / 1000.0
+        anim_time += dt
         cw, ch = screen.get_size()
+        if status_timer > 0.0:
+            status_timer = max(0.0, status_timer - dt)
 
         slider_year.rect.y = ch - 45
         slider_time.rect.y = ch - 45
@@ -1089,10 +1095,12 @@ def main():
 
             if slider_year.handle_event(event):
                 current_year = int(slider_year.val)
-            if slider_time.handle_event(event) or slider_alt.handle_event(event):
+            if slider_time.handle_event(event):
                 continue
             if slider_lat.handle_event(event) or slider_lon.handle_event(event):
                 location_name = "Własne współrzędne"
+                continue
+            if slider_height.handle_event(event):
                 continue
 
             if event.type == pygame.MOUSEWHEEL:
@@ -1122,21 +1130,15 @@ def main():
                 elif event.key == pygame.K_r:
                     target_fov = base_fov
                 elif event.key == pygame.K_e:
-                    dist_ang = math.hypot(
-                        cam_alt - data["earth"][0],
-                        (cam_az - data["earth"][1] + math.pi) % (2 * math.pi) - math.pi,
-                    )
+                    dist_ang = math.hypot(cam_alt - data["earth"][0], (cam_az - data["earth"][1] + math.pi) % (2 * math.pi) - math.pi)
                     cam_alt, cam_az = data["earth"][0], data["earth"][1]
-                    if dist_ang < math.radians(3.0):
-                        target_fov = math.radians(0.8) if target_fov <= math.radians(4.0) else math.radians(3.2)
+                    if dist_ang < math.radians(2.0):
+                        target_fov = math.radians(3.2)
                 elif event.key == pygame.K_s:
-                    dist_ang = math.hypot(
-                        cam_alt - data["sun"][0],
-                        (cam_az - data["sun"][1] + math.pi) % (2 * math.pi) - math.pi,
-                    )
+                    dist_ang = math.hypot(cam_alt - data["sun"][0], (cam_az - data["sun"][1] + math.pi) % (2 * math.pi) - math.pi)
                     cam_alt, cam_az = data["sun"][0], data["sun"][1]
-                    if dist_ang < math.radians(3.0):
-                        target_fov = math.radians(0.45) if target_fov <= math.radians(2.0) else math.radians(1.4)
+                    if dist_ang < math.radians(2.0):
+                        target_fov = math.radians(1.4)
                 elif event.key == pygame.K_l:
                     hor_alt = terrain_3d.get_horizon_at_azimuth(cam_az)
                     if abs(cam_alt - hor_alt) < math.radians(1.5):
@@ -1147,17 +1149,9 @@ def main():
                 elif event.key == pygame.K_h:
                     show_horizon_line = not show_horizon_line
                 elif event.key == pygame.K_c:
-                    if terrain_3d.horizon_alt is not None:
-                        fname = "horizon.csv"
-                        try:
-                            with open(fname, "w", newline="", encoding="utf-8") as f_csv:
-                                writer = csv.writer(f_csv)
-                                writer.writerow(["Azimuth_deg", "Altitude_deg"])
-                                for az_rad, alt_rad in zip(terrain_3d.az_grid[:-1], terrain_3d.horizon_alt):
-                                    writer.writerow([f"{math.degrees(az_rad):.4f}", f"{math.degrees(alt_rad):.4f}"])
-                            print(f"[OK] Zapisano horyzont topograficzny do: {fname}")
-                        except Exception as e:
-                            print(f"[BŁĄD] Nie udało się zapisać CSV: {e}")
+                    terrain_3d.export_horizon_csv("horizon.csv")
+                    status_msg = "Zapisano profil horyzontu: horizon.csv"
+                    status_timer = 3.5
                 elif event.key in presets:
                     location_name, slider_lat.val, slider_lon.val = presets[event.key]
 
@@ -1173,7 +1167,7 @@ def main():
             if slider_time.val >= len(year_data["times"]) - 1:
                 slider_time.val = 0
 
-        terrain_3d.update_observer(slider_lat.val, slider_lon.val, alt_above_surface_km=slider_alt.val)
+        terrain_3d.update_observer(slider_lat.val, slider_lon.val, eye_height_m=slider_height.val)
 
         data = get_topocentric_vectors(
             year_data,
@@ -1186,8 +1180,12 @@ def main():
         sun_alt, sun_az, sun_dist = data["sun"]
         north, east, up = data["obs_bases"]
         R_body = data["R_body"]
-        sun_earth_dir = data["sun_earth_dir"]
+        sun_from_earth_enu = data["sun_from_earth_enu"]
+        ecef_axes_enu = data["ecef_axes_enu"]
         d_j2000 = data["d_j2000"]
+
+        cam_basis = get_camera_basis()
+        _, cam_right, cam_up = cam_basis
 
         screen.fill((5, 7, 12))
 
@@ -1201,49 +1199,57 @@ def main():
         star_azs = np.arctan2(s_e, s_n) % (2 * np.pi)
 
         for s_alt, s_az, mag in zip(star_alts, star_azs, star_mags):
-            if s_alt > -0.45:
-                proj = project_point(float(s_alt), float(s_az), cw, ch)
+            if s_alt > -0.1:
+                proj = project_point(s_alt, s_az, cw, ch, cam_basis)
                 if proj and 0 <= proj[0] < cw and 0 <= proj[1] < ch:
-                    screen.set_at((int(proj[0]), int(proj[1])), (int(mag), int(mag), int(mag)))
+                    screen.set_at((int(proj[0]), int(proj[1])), (mag, mag, mag))
 
         # 2. Siatka azymutalna
         grid_color = (25, 35, 50)
         for a_deg in range(0, 90, 30):
             a_rad = math.radians(a_deg)
-            pts = [project_point(a_rad, math.radians(z), cw, ch) for z in range(0, 365, 5)]
+            pts = [project_point(a_rad, math.radians(z), cw, ch, cam_basis) for z in range(0, 365, 5)]
             pts_xy = [(p[0], p[1]) if p else None for p in pts]
             for i in range(len(pts_xy) - 1):
                 if pts_xy[i] and pts_xy[i + 1]:
                     pygame.draw.line(screen, grid_color, pts_xy[i], pts_xy[i + 1], 1)
 
-        # 3. SŁOŃCE
-        sun_proj = project_point(sun_alt, sun_az, cw, ch)
+        # 3. SŁOŃCE (teleskopowe pociemnienie brzegowe + korona)
+        sun_proj = project_point(sun_alt, sun_az, cw, ch, cam_basis)
         if sun_proj:
             sx, sy, z_cam, focal = sun_proj
-            r_sun_exact = math.asin(min(1.0, R_SUN / sun_dist)) * focal / z_cam
+            ang_sun = math.asin(min(1.0, R_SUN / sun_dist))
+            r_sun_exact = math.tan(ang_sun) * focal / z_cam
             draw_telescopic_sun(screen, sx, sy, r_sun_exact, cw, ch)
-            r_label = max(4, int(r_sun_exact))
+            r_label = max(6, int(r_sun_exact))
             if 0 <= sx + r_label + 6 < cw and 0 <= sy - 8 < ch:
-                screen.blit(font.render("Słońce", True, (255, 230, 150)), (int(sx + r_label + 6), int(sy - 8)))
+                screen.blit(font.render("Słońce", True, (255, 230, 150)), (sx + r_label + 6, sy - 8))
 
-        # 4. ZIEMIA
-        earth_proj = project_point(earth_alt, earth_az, cw, ch)
+        # 4. ZIEMIA (wektorowy renderer 3D z dokładną fazą, teksturą dnia/nocy i ruchem chmur)
+        earth_proj = project_point(earth_alt, earth_az, cw, ch, cam_basis)
         if earth_proj:
             ex, ey, z_cam, focal = earth_proj
-            r_earth_exact = math.asin(min(1.0, R_EARTH / earth_dist)) * focal / z_cam
-            earth_spin = (2.0 * math.pi * d_j2000 * 1.0027379) % (2.0 * math.pi)
+            ang_earth = math.asin(min(1.0, R_EARTH / earth_dist))
+            r_earth_exact = math.tan(ang_earth) * focal / z_cam
+            dir_earth_enu = np.array([
+                math.cos(earth_alt) * math.cos(earth_az),
+                math.cos(earth_alt) * math.sin(earth_az),
+                math.sin(earth_alt),
+            ])
+            cloud_time = d_j2000 * 5.0 + anim_time * 0.35
             draw_telescopic_earth(
                 screen, ex, ey, r_earth_exact, cw, ch,
-                sun_earth_dir, earth_spin,
+                cam_right, cam_up, dir_earth_enu, sun_from_earth_enu,
+                ecef_axes_enu, cloud_time,
                 day_arr=earth_day_arr,
                 night_arr=earth_night_arr,
                 clouds_arr=earth_clouds_arr,
             )
-            r_elabel = max(6, int(r_earth_exact))
+            r_elabel = max(8, int(r_earth_exact))
             if 0 <= ex + r_elabel + 8 < cw and 0 <= ey - 8 < ch:
-                screen.blit(font.render("Ziemia", True, (130, 200, 255)), (int(ex + r_elabel + 8), int(ey - 8)))
+                screen.blit(font.render("Ziemia", True, (130, 200, 255)), (ex + r_elabel + 8, ey - 8))
 
-        # 5. PIKSELOWY SHADER POWIERZCHNI KSIĘŻYCA
+        # 5. MODEL 3D TEKSTUROWANEJ POWIERZCHNI KSIĘŻYCA I HORYZONTU
         terrain_3d.draw_3d(
             screen, cw, ch, cam_alt, cam_az, fov,
             sun_alt, sun_az, earth_alt,
@@ -1255,48 +1261,56 @@ def main():
         for label, deg in [("N", 0), ("NE", 45), ("E", 90), ("SE", 135), ("S", 180), ("SW", 225), ("W", 270), ("NW", 315)]:
             az_r = math.radians(deg)
             h_alt = terrain_3d.get_horizon_at_azimuth(az_r) + max(math.radians(1.2), fov * 0.02)
-            proj = project_point(h_alt, az_r, cw, ch)
+            proj = project_point(h_alt, az_r, cw, ch, cam_basis)
             if proj and 0 <= proj[0] < cw and 0 <= proj[1] < ch:
                 col = (255, 90, 90) if label == "N" else (210, 220, 235)
                 txt = font_big.render(label, True, col)
-                screen.blit(txt, (int(proj[0] - txt.get_width() // 2), int(proj[1] - txt.get_height() // 2)))
+                screen.blit(txt, (proj[0] - txt.get_width() // 2, proj[1] - txt.get_height() // 2))
 
         # 7. HUD
         earth_hor = terrain_3d.get_horizon_at_azimuth(earth_az)
         sun_hor = terrain_3d.get_horizon_at_azimuth(sun_az)
         cam_hor = terrain_3d.get_horizon_at_azimuth(cam_az)
         zoom_mag = base_fov / fov
+        height_str = format_height_m(slider_height.val)
 
         earth_vis = "WIDOCZNA" if earth_alt > earth_hor else "ZA HORYZONTEM"
         sun_vis = "WIDOCZNE" if sun_alt > sun_hor else "ZA HORYZONTEM"
-        alt_text = f"{slider_alt.val * 1000.0:.1f} m" if slider_alt.val < 1.0 else f"{slider_alt.val:.2f} km"
 
         info_lines = [
-            f"Lokacja: {location_name} | DEM: {dem_source} | FPS: {clock.get_fps():.0f}",
-            f"Grunt: {terrain_3d.obs_elev_km:+.3f} km | Wys. nad pow.: {alt_text} | Zoom: {zoom_mag:.1f}x",
+            f"Lokacja: {location_name} | DEM: {dem_source}",
+            f"Teren: {terrain_3d.obs_elev_km:+.3f} km | Wys. obs.: {height_str} | Zoom: {zoom_mag:.1f}x",
             f"Kamera: Az {math.degrees(cam_az):.2f}° | Alt {math.degrees(cam_alt):+.2f}° (Hor: {math.degrees(cam_hor):+.2f}°)",
-            "-" * 60,
+            "-" * 58,
             f"ZIEMIA: Alt {math.degrees(earth_alt):+6.2f}° | Az {math.degrees(earth_az):6.2f}° [{earth_vis}]",
             f"SŁOŃCE: Alt {math.degrees(sun_alt):+6.2f}° | Az {math.degrees(sun_az):6.2f}° [{sun_vis}]",
-            "-" * 60,
-            "[Scroll / +/-] Zoom (do 500x) | [R] Reset zoomu | [Spacja] Play",
+            "-" * 58,
+            "[Scroll / +/-] Zoom (do 375x) | [R] Reset zoomu | [Spacja] Play",
             "[E] Ziemia (2x = zoom) | [S] Słońce (2x = zoom) | [L] Horyzont",
-            "[C] Zapisz horyzont (CSV) | [M] Siatka 3D | [H] Horyzont | [1-5] Lokacje",
+            "[M] Siatka 3D | [H] Linia horyzontu | [C] Zapisz horizon.csv",
+            "[1-5] Lokacje Księżyca",
         ]
 
-        panel_w = 620
-        panel_surf = pygame.Surface((panel_w, len(info_lines) * 20 + 16), pygame.SRCALPHA)
+        panel_w = 595
+        extra_h = 24 if status_timer > 0.0 else 0
+        panel_surf = pygame.Surface((panel_w, len(info_lines) * 20 + 16 + extra_h), pygame.SRCALPHA)
         panel_surf.fill((15, 20, 30, 195))
         screen.blit(panel_surf, (cw - panel_w - 15, 15))
 
         for i, line in enumerate(info_lines):
             screen.blit(font.render(line, True, (210, 215, 225)), (cw - panel_w - 5, 22 + i * 20))
 
+        if status_timer > 0.0:
+            screen.blit(
+                font.render(status_msg, True, (120, 235, 150)),
+                (cw - panel_w - 5, 22 + len(info_lines) * 20 + 4),
+            )
+
         slider_year.draw(screen, font)
         slider_time.draw(screen, font, data["time"].strftime("%Y-%m-%d %H:%M UTC"))
         slider_lat.draw(screen, font)
         slider_lon.draw(screen, font)
-        slider_alt.draw(screen, font, alt_text)
+        slider_height.draw(screen, font, height_str)
 
         pygame.display.flip()
 
@@ -1306,4 +1320,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
