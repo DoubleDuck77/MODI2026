@@ -3,3 +3,9 @@ __pycache__/
 .venv/
 .playwright-mcp/
 .superpowers/
+Textures/moon_dem_v2.npy
+Textures/moon_dem.jpg
+Textures/regolith_detail_*.npz
+Textures/ldem_*.img
+Textures/*.part
+horizons/

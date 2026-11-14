@@ -20,15 +20,21 @@ Import modułu niczego nie wypisuje ani nie pobiera; DEM i ``newlunar`` ładują
 pierwszym użyciu.
 """
 
+import csv
 import math
 import os
+import sys
+import types
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Tuple
 
 import numpy as np
 
 REPO_DIR = Path(__file__).resolve().parent
+TEXTURES_DIR = REPO_DIR / "Textures"
+HORIZONS_DIR = REPO_DIR / "horizons"
 
 R_MOON_KM = 1737.4
 R_EARTH_KM = 6371.0
@@ -179,3 +185,162 @@ def earth_in_moon_frame_km(eph: Ephemeris, times: Sequence[datetime]) -> np.ndar
     """Wektory środek Księżyca → środek Ziemi [km] w układzie Księżyca ME, kształt (N, 3)."""
     m = moon_me_matrix(days_since_j2000(times))
     return np.einsum("nij,nj->ni", m, -eph.moon_geo_km(times))
+
+
+# --------------------------- TEREN / HORYZONT ---------------------------
+#
+# newlunar.py liczy horyzont (klawisz C) z DEM w Textures/moon_dem_v2.npy. Jego adresy pobierania
+# DEM (Wikimedia) zwracają 404, więc bez tego cache używa proceduralnego, zmyślonego terenu.
+# Tu zapisujemy do tego cache prawdziwy LOLA LDEM_16 w formacie newlunar (float32, km względem
+# 1737.4 km, wiersz 0 = lat +90, kolumna 0 = lon −180) i liczymy horyzont jego własnym kodem.
+
+LDEM16_URL = ("https://pds-geosciences.wustl.edu/lro/lro-l-lola-3-rdr-v1/lrolol_1xxx/"
+              "data/lola_gdr/cylindrical/img/ldem_16.img")
+LDEM16_SHAPE = (2880, 5760)                      # 16 px/°, kolumna 0 = lon 0°E, środki pikseli
+LDEM16_BYTES = LDEM16_SHAPE[0] * LDEM16_SHAPE[1] * 2
+LDEM16_RAW = TEXTURES_DIR / "ldem_16.img"
+NEWLUNAR_DEM_CACHE = TEXTURES_DIR / "moon_dem_v2.npy"
+HORIZON_HEADER = ["Azimuth_deg", "Altitude_deg"]
+
+
+def ldem16_to_newlunar(raw_path: Path) -> np.ndarray:
+    """LDEM_16 (int16 LE, 0.5 m/DN względem 1737.4 km) → mapa wysokości w formacie newlunar [km]."""
+    raw_path = Path(raw_path)
+    size = raw_path.stat().st_size if raw_path.exists() else 0
+    if size != LDEM16_BYTES:
+        raise RuntimeError(
+            f"niepełny plik {raw_path} ({size} B, oczekiwano {LDEM16_BYTES} B) — "
+            f"usuń go i uruchom ponownie albo pobierz ręcznie z {LDEM16_URL}"
+        )
+    dn = np.memmap(raw_path, dtype="<i2", mode="r", shape=LDEM16_SHAPE)
+    km = dn.astype(np.float32) * np.float32(0.5 / 1000.0)
+    # kolumna 0 to lon 0°E → przesuwamy o pół obwodu, żeby kolumna 0 była lon −180° (jak w newlunar)
+    return np.ascontiguousarray(np.roll(km, LDEM16_SHAPE[1] // 2, axis=1))
+
+
+def _download(url: str, dest: Path) -> None:
+    part = dest.with_name(dest.name + ".part")
+    req = urllib.request.Request(url, headers={"User-Agent": "modi2026-dte"})
+    print(f"[DTE] Pobieranie DEM LOLA: {url}", file=sys.stderr)
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp, open(part, "wb") as out:
+            total = int(resp.headers.get("Content-Length") or 0)
+            done, next_report = 0, 0.1
+            while True:
+                chunk = resp.read(1 << 20)
+                if not chunk:
+                    break
+                out.write(chunk)
+                done += len(chunk)
+                if total and done / total >= next_report:
+                    print(f"[DTE]   {done * 100 // total}%", file=sys.stderr)
+                    next_report += 0.1
+    except OSError as e:
+        raise RuntimeError(f"nie udało się pobrać {url}: {e}; pobierz plik ręcznie do {dest}") from e
+    os.replace(part, dest)
+
+
+def ensure_newlunar_dem() -> np.ndarray:
+    """Mapa wysokości [km] z cache newlunar; przy braku cache pobiera LDEM_16 i go tworzy."""
+    if NEWLUNAR_DEM_CACHE.exists():
+        return np.load(NEWLUNAR_DEM_CACHE)
+    TEXTURES_DIR.mkdir(parents=True, exist_ok=True)
+    if not LDEM16_RAW.exists():
+        _download(LDEM16_URL, LDEM16_RAW)
+    dem = ldem16_to_newlunar(LDEM16_RAW)
+    tmp = NEWLUNAR_DEM_CACHE.with_name(NEWLUNAR_DEM_CACHE.name + ".part")
+    with open(tmp, "wb") as f:
+        np.save(f, dem)
+    os.replace(tmp, NEWLUNAR_DEM_CACHE)
+    LDEM16_RAW.unlink()
+    print(f"[DTE] Zapisano DEM LOLA dla newlunar: {NEWLUNAR_DEM_CACHE}", file=sys.stderr)
+    return dem
+
+
+_NEWLUNAR = None
+_TERRAIN = None
+
+
+def _newlunar():
+    """Import newlunar.py bez okna; gdy brak pygame, podstawiamy pusty moduł (nie wołamy pygame)."""
+    global _NEWLUNAR
+    if _NEWLUNAR is None:
+        os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")   # pygame wypisuje baner na stdout
+        try:
+            import pygame  # noqa: F401
+        except ImportError:
+            sys.modules["pygame"] = types.ModuleType("pygame")
+        if str(REPO_DIR) not in sys.path:
+            sys.path.insert(0, str(REPO_DIR))
+        import newlunar
+        _NEWLUNAR = newlunar
+    return _NEWLUNAR
+
+
+def _terrain():
+    """Jedna instancja newlunar.LunarTerrain3D na proces (albedo nie jest potrzebne do horyzontu)."""
+    global _TERRAIN
+    if _TERRAIN is None:
+        nl = _newlunar()
+        dem = ensure_newlunar_dem()
+        cwd = os.getcwd()
+        os.chdir(REPO_DIR)   # LunarTerrain3D zapisuje Textures/regolith_detail_512.npz względem cwd
+        try:
+            _TERRAIN = nl.LunarTerrain3D(dem, np.zeros((2, 2, 3), dtype=np.float32))
+        finally:
+            os.chdir(cwd)
+    return _TERRAIN
+
+
+def _check_observer(lat_deg: float, lon_deg: float, antenna_height_m: float) -> None:
+    if not -90.0 <= lat_deg <= 90.0:
+        raise ValueError(f"lat_deg={lat_deg} poza zakresem [-90, 90]")
+    if not -180.0 <= lon_deg <= 180.0:
+        raise ValueError(f"lon_deg={lon_deg} poza zakresem [-180, 180]")
+    if not antenna_height_m >= 0.0:
+        raise ValueError(f"antenna_height_m={antenna_height_m} musi być >= 0")
+
+
+def generate_horizon_csv(lat_deg: float, lon_deg: float, antenna_height_m: float = 2.0,
+                         out_dir: Optional[Path] = None) -> Tuple[Path, float]:
+    """Horyzont terenowy jak klawisz C w newlunar.py, bez okna. Zwraca (ścieżka CSV, grunt [m])."""
+    _check_observer(lat_deg, lon_deg, antenna_height_m)
+    terrain = _terrain()
+    terrain.update_observer(lat_deg, lon_deg, alt_above_surface_km=antenna_height_m / 1000.0)
+
+    out_dir = Path(out_dir or HORIZONS_DIR)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"horizon_lat{lat_deg:+.4f}_lon{lon_deg:+.4f}_h{antenna_height_m:g}m.csv"
+    # zapis identyczny jak newlunar.py (klawisz C)
+    with open(path, "w", newline="", encoding="utf-8") as f_csv:
+        writer = csv.writer(f_csv)
+        writer.writerow(HORIZON_HEADER)
+        for az_rad, alt_rad in zip(terrain.az_grid[:-1], terrain.horizon_alt):
+            writer.writerow([f"{math.degrees(az_rad):.4f}", f"{math.degrees(alt_rad):.4f}"])
+    return path, float(terrain.obs_elev_km) * 1000.0
+
+
+def load_horizon_csv(path: Path) -> Tuple[np.ndarray, np.ndarray]:
+    """Czyta horizon.csv (format klawisza C): zwraca (azymuty [deg], elewacje horyzontu [deg])."""
+    path = Path(path)
+    if not path.is_file():
+        raise ValueError(f"{path}: brak pliku horyzontu")
+    with open(path, newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    if not rows or [c.strip() for c in rows[0]] != HORIZON_HEADER:
+        raise ValueError(f"{path}: oczekiwano nagłówka {','.join(HORIZON_HEADER)}")
+    try:
+        data = np.array([[float(r[0]), float(r[1])] for r in rows[1:] if r], dtype=np.float64)
+    except (ValueError, IndexError):
+        raise ValueError(f"{path}: niepoprawny wiersz danych (oczekiwano dwóch liczb)") from None
+    if len(data) < 2 or not np.all(np.isfinite(data)):
+        raise ValueError(f"{path}: za mało wierszy lub wartości nieskończone")
+    az, alt = data[:, 0], data[:, 1]
+    if az[0] < 0.0 or az[-1] >= 360.0 or np.any(np.diff(az) <= 0.0):
+        raise ValueError(f"{path}: azymuty muszą rosnąć w zakresie [0, 360)")
+    return az, alt
+
+
+def horizon_at(az_tab: np.ndarray, alt_tab: np.ndarray, az_deg) -> np.ndarray:
+    """Elewacja horyzontu [deg] w azymutach ``az_deg`` (interpolacja okresowa przez 0°/360°)."""
+    return np.interp(np.asarray(az_deg, dtype=np.float64) % 360.0, az_tab, alt_tab, period=360.0)
