@@ -1,5 +1,5 @@
-import os
-from pathlib import Path
+"""Fabryka aplikacji FastAPI. Uruchamianie: ``uvicorn app.main:app``."""
+
 from typing import List, Optional
 
 from fastapi import FastAPI
@@ -17,16 +17,12 @@ __all__ = ["API_PREFIX", "app", "create_app"]
 
 
 class RevalidatingStaticFiles(StaticFiles):
-    """Pliki frontendu z ``Cache-Control: no-cache`` oraz obsługą katalogów nadrzędnych."""
+    """Pliki frontendu z ``Cache-Control: no-cache``.
 
-    def __init__(self, *args, extra_dirs: Optional[List[Path]] = None, **kwargs):
-        super().__init__(*args, **kwargs)
-        existing = {os.path.realpath(str(d)) for d in self.all_directories}
-        for extra in extra_dirs or []:
-            resolved = os.path.realpath(str(extra))
-            if resolved not in existing:
-                self.all_directories.append(resolved)
-                existing.add(resolved)
+    Bez nagłówka przeglądarka cache'uje moduły ES heurystycznie i po zmianie kodu wykonuje
+    stary plik. ``no-cache`` wymusza rewalidację (ETag → 304), więc nic nie jest pobierane
+    ponownie, gdy plik się nie zmienił.
+    """
 
     def file_response(self, *args, **kwargs):
         response = super().file_response(*args, **kwargs)
@@ -57,19 +53,8 @@ def create_app(settings: Optional[Settings] = None, features: Optional[List[Feat
     app.include_router(build_feature_router(registry), prefix=API_PREFIX)
 
     app.mount("/textures", StaticFiles(directory=settings.textures_dir, check_dir=False), name="textures")
-
-    parent_dir = Path(settings.frontend_dir).resolve().parent
-    # Frontend jako ostatni mount: szuka najpierw w frontend/, a potem w katalogu ponad frontend/.
-    app.mount(
-        "/",
-        RevalidatingStaticFiles(
-            directory=settings.frontend_dir,
-            extra_dirs=[parent_dir],
-            html=True,
-            check_dir=False,
-        ),
-        name="frontend",
-    )
+    # Frontend jako ostatni mount: łapie wszystko, czego nie obsłużyły trasy powyżej.
+    app.mount("/", RevalidatingStaticFiles(directory=settings.frontend_dir, html=True, check_dir=False), name="frontend")
     return app
 
 
