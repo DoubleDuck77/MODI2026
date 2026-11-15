@@ -8,11 +8,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from linear_interpolation_position import interpoluj_polozenie
-
+#222222
 try:
     from time_zone_converter import convert_time_zone, convert_to_utc, define_IANA_zone
 except ImportError:
@@ -647,126 +646,7 @@ def _formatuj_strefe_utc(strefa_iana: str, daty: list[datetime]) -> str:
     return f"{utc_start}/{utc_end}"
 
 
-def rysuj_wykresy_elewacji(
-    tablica_elewacji: list[list],
-    lat_deg: float,
-    lon_deg: float,
-    strefa_iana: str,
-    wysokosci_gor_ziemia: list[float] | None = None,
-) -> None:
-    """
-    Wizualizuje 2 wykresy w matplotlib:
-      1) wysokość górnej części tarczy Słońca od czasu i jednocześnie wysokość kątową gór,
-      2) wysokość dolnej części tarczy Ziemi od czasu i jednocześnie wysokość kątową gór.
-    """
-    daty = [datetime.strptime(wiersz[0], "%Y-%m-%d %H:%M") for wiersz in tablica_elewacji]
-    elewacje_slonca_gora = [wiersz[1] for wiersz in tablica_elewacji]
-    elewacje_ziemi_dol = [wiersz[2] for wiersz in tablica_elewacji]
-    wysokosci_gor_slonce = [wiersz[3] for wiersz in tablica_elewacji]
-    gory_do_ziemi = (
-        wysokosci_gor_ziemia if wysokosci_gor_ziemia is not None else wysokosci_gor_slonce
-    )
-    strefa_utc = _formatuj_strefe_utc(strefa_iana, daty)
 
-    # --- Wykres 1: Górna część tarczy Słońca oraz wysokość kątowa gór ---
-    fig1, ax1 = plt.subplots(figsize=(12, 5))
-    ax1.plot(
-        daty,
-        elewacje_slonca_gora,
-        color="#f59e0b",
-        linewidth=1.8,
-        label="Wysokość górnej części tarczy Słońca [°]",
-    )
-    ax1.plot(
-        daty,
-        wysokosci_gor_slonce,
-        color="#475569",
-        linewidth=1.8,
-        label="Wysokość kątowa gór (azymut Słońca) [°]",
-    )
-    ax1.axhline(
-        0.0,
-        color="#0284c7",
-        linestyle="--",
-        linewidth=1.2,
-        label="Horyzont matematyczny (0°)",
-    )
-
-    ax1.fill_between(
-        daty,
-        elewacje_slonca_gora,
-        wysokosci_gor_slonce,
-        where=[s > g for s, g in zip(elewacje_slonca_gora, wysokosci_gor_slonce)],
-        color="#fde047",
-        alpha=0.25,
-        interpolate=True,
-        label="Górna część tarczy Słońca ponad górami",
-    )
-
-    if len(daty) > 1:
-        ax1.set_xlim(daty[0], daty[-1])
-
-    ax1.set_title(
-        f"Wysokość górnej części tarczy Słońca oraz wysokość kątowa gór na Księżycu "
-        f"(Lat: {lat_deg:+.2f}°, Lon: {lon_deg:+.2f}° | {strefa_utc})"
-    )
-    ax1.set_xlabel(f"Data i godzina ({strefa_utc})")
-    ax1.set_ylabel("Wysokość kątowa [°]")
-    ax1.grid(True, linestyle=":", alpha=0.6)
-    ax1.legend(loc="best")
-    fig1.autofmt_xdate()
-    fig1.tight_layout()
-
-    # --- Wykres 2: Dolna część tarczy Ziemi oraz wysokość kątowa gór ---
-    fig2, ax2 = plt.subplots(figsize=(12, 5))
-    ax2.plot(
-        daty,
-        elewacje_ziemi_dol,
-        color="#2563eb",
-        linewidth=1.8,
-        label="Wysokość dolnej części tarczy Ziemi [°]",
-    )
-    ax2.plot(
-        daty,
-        gory_do_ziemi,
-        color="#475569",
-        linewidth=1.8,
-        label="Wysokość kątowa gór (azymut Ziemi) [°]",
-    )
-    ax2.axhline(
-        0.0,
-        color="#0284c7",
-        linestyle="--",
-        linewidth=1.2,
-        label="Horyzont matematyczny (0°)",
-    )
-
-    ax2.fill_between(
-        daty,
-        elewacje_ziemi_dol,
-        gory_do_ziemi,
-        where=[z > g for z, g in zip(elewacje_ziemi_dol, gory_do_ziemi)],
-        color="#38bdf8",
-        alpha=0.25,
-        interpolate=True,
-        label="Cała tarcza Ziemi ponad górami",
-    )
-
-    if len(daty) > 1:
-        ax2.set_xlim(daty[0], daty[-1])
-
-    ax2.set_title(
-        f"Wysokość dolnej części tarczy Ziemi (R = 6371 km) oraz wysokość kątowa gór na Księżycu "
-        f"(Lat: {lat_deg:+.2f}°, Lon: {lon_deg:+.2f}° | {strefa_utc})"
-    )
-    ax2.set_xlabel(f"Data i godzina ({strefa_utc})")
-    ax2.set_ylabel("Wysokość kątowa [°]")
-    ax2.grid(True, linestyle=":", alpha=0.6)
-    ax2.legend(loc="best")
-    fig2.autofmt_xdate()
-    fig2.tight_layout()
-
-    plt.show()
 
 
 if __name__ == "__main__":
