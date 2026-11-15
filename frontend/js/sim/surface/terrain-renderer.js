@@ -261,7 +261,9 @@ export class TerrainRenderer {
     const fp = this.horizonAlt;
     if (!fp) return 0.0;
     const xp = this.azGrid;
-    const x = ((azRad % TWO_PI) + TWO_PI) % TWO_PI;
+    // az % 2π jak w numpy/Pythonie (wynik ze znakiem dzielnika, -0.0 → +0.0)
+    const r = azRad % TWO_PI;
+    const x = r < 0 ? r + TWO_PI : (r === 0 ? 0 : r);
     const last = xp.length - 1;
     if (x >= xp[last]) return fp[last];
     if (x <= xp[0]) return fp[0];

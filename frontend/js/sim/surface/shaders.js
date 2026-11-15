@@ -7,6 +7,10 @@
 //   3. UV albedo przez albedoUV(uv) (globalne UV → UV tekstury-okna; pełny pierścień bez mod);
 //   4. u_offset_px/u_viewport w horizon VS (WebGL ignoruje lineWidth > 1).
 // Wspólny blok okna (demTexel/demLinear/albedoUV) jest wklejony po uniformach VS i FS terenu.
+//
+// Niebo: GPURenderer._STAR_VS/FS, _GRID_VS/FS, _QUAD_VS, _SUN_FS i _EARTH_FS (geografia.py:527-834)
+// dosłownie, zmieniony tylko nagłówek (jak w 1.). _HUD_FS pomijamy: HUD rysuje canvas 2D (odchylenie 5).
+// gl_FragCoord w WebGL ma początek w lewym dolnym rogu jak w GL, więc py = u_ch - gl_FragCoord.y - 0.5 zostaje.
 
 // geografia.py:1223-1340
 export const TERRAIN_VS = `#version 300 es
@@ -334,5 +338,335 @@ precision highp sampler2D;
     out vec4 out_color;
     void main() {
         out_color = vec4(90.0 / 255.0, 175.0 / 255.0, 220.0 / 255.0, 1.0);
+    }
+`;
+
+// geografia.py:527-578
+export const STAR_VS = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+    in vec3 in_ecl;
+    in float in_mag;
+
+    uniform mat3 u_R_body;
+    uniform vec3 u_north;
+    uniform vec3 u_east;
+    uniform vec3 u_up;
+    uniform vec3 u_fwd;
+    uniform vec3 u_right;
+    uniform vec3 u_cam_up;
+    uniform float u_cw;
+    uniform float u_ch;
+    uniform float u_focal;
+
+    out float v_mag;
+
+    void main() {
+        vec3 sb = u_R_body * in_ecl;
+        float sn = dot(sb, u_north);
+        float se = dot(sb, u_east);
+        float su = dot(sb, u_up);
+
+        float s_alt = asin(clamp(su, -1.0, 1.0));
+        if (s_alt <= -0.1) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            gl_PointSize = 1.0;
+            v_mag = 0.0;
+            return;
+        }
+        float s_az = atan(se, sn);
+        float ca = cos(s_alt);
+        vec3 p = vec3(ca * cos(s_az), ca * sin(s_az), sin(s_alt));
+
+        float z_cam = dot(p, u_fwd);
+        if (z_cam <= 0.05) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            gl_PointSize = 1.0;
+            v_mag = 0.0;
+            return;
+        }
+        float x_cam = dot(p, u_right);
+        float y_cam = dot(p, u_cam_up);
+        float sx = u_cw * 0.5 + (x_cam / z_cam) * u_focal;
+        float sy = u_ch * 0.5 - (y_cam / z_cam) * u_focal;
+
+        gl_Position = vec4((sx / u_cw) * 2.0 - 1.0, 1.0 - (sy / u_ch) * 2.0, 0.0, 1.0);
+        gl_PointSize = 1.0;
+        v_mag = in_mag;
+    }
+`;
+
+// geografia.py:580-587
+export const STAR_FS = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+    in float v_mag;
+    out vec4 out_color;
+    void main() {
+        out_color = vec4(v_mag, v_mag, v_mag, 1.0);
+    }
+`;
+
+// geografia.py:589-605
+export const GRID_VS = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+    in vec3 in_enu;
+
+    uniform vec3 u_fwd;
+    uniform vec3 u_right;
+    uniform vec3 u_cam_up;
+    uniform float u_tan_x;
+    uniform float u_tan_y;
+
+    void main() {
+        float zc = dot(in_enu, u_fwd);
+        float xc = dot(in_enu, u_right);
+        float yc = dot(in_enu, u_cam_up);
+        gl_Position = vec4(xc / u_tan_x, yc / u_tan_y, 0.0, zc);
+    }
+`;
+
+// geografia.py:607-614
+export const GRID_FS = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+    uniform vec4 u_color;
+    out vec4 out_color;
+    void main() {
+        out_color = u_color;
+    }
+`;
+
+// geografia.py:616-625
+export const QUAD_VS = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+    in vec2 in_pos;
+    in vec2 in_uv;
+    out vec2 v_uv;
+    void main() {
+        gl_Position = vec4(in_pos, 0.0, 1.0);
+        v_uv = in_uv;
+    }
+`;
+
+// geografia.py:627-664
+export const SUN_FS = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+    uniform float u_sx;
+    uniform float u_sy;
+    uniform float u_r_sun;
+    uniform float u_halo_mult;
+    uniform float u_ch;
+
+    out vec4 out_color;
+
+    void main() {
+        float px = gl_FragCoord.x - 0.5;
+        float py = u_ch - gl_FragCoord.y - 0.5;
+        float gx = (px - u_sx) / u_r_sun;
+        float gy = (py - u_sy) / u_r_sun;
+        float dist = sqrt(gx * gx + gy * gy);
+
+        if (dist <= 1.0) {
+            float mu = sqrt(clamp(1.0 - dist * dist, 0.0, 1.0));
+            float limb_dark = 0.45 + 0.55 * pow(mu, 0.50);
+            if (u_r_sun > 18.0) {
+                float granulation = 0.028 * sin(gx * 55.0) * cos(gy * 55.0);
+                limb_dark = clamp(limb_dark + granulation, 0.25, 1.05);
+            }
+            float r = clamp(min(1.0, limb_dark * 1.06), 0.0, 1.0);
+            float g = clamp((246.0 / 255.0) * limb_dark, 0.0, 1.0);
+            float b = clamp((218.0 / 255.0) * pow(limb_dark, 1.15), 0.0, 1.0);
+            out_color = vec4(r, g, b, 1.0);
+        } else if (dist <= u_halo_mult) {
+            float t_c = (dist - 1.0) / (u_halo_mult - 1.0);
+            float glow = exp(-2.6 * t_c) * (1.0 - t_c);
+            float alpha = clamp((220.0 / 255.0) * glow, 0.0, 1.0);
+            out_color = vec4(1.0, 228.0 / 255.0, 165.0 / 255.0, alpha);
+        } else {
+            discard;
+        }
+    }
+`;
+
+// geografia.py:666-834
+export const EARTH_FS = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+    const float PI = 3.14159265358979323846;
+    const float R_EARTH = 6371.0;
+    const float R_MOON = 1737.4;
+    const float R_SUN = 696340.0;
+
+    uniform float u_ex;
+    uniform float u_ey;
+    uniform float u_r_earth;
+    uniform float u_ch;
+
+    uniform vec3 u_e_x_cam;
+    uniform vec3 u_e_y_cam;
+    uniform vec3 u_e_z_cam;
+
+    uniform vec3 u_x_ecef;
+    uniform vec3 u_y_ecef;
+    uniform vec3 u_z_ecef;
+
+    uniform vec3 u_sun_from_earth_enu;
+    uniform vec3 u_moon_from_earth_enu;
+    uniform float u_moon_sun_dot;
+    uniform float u_sun_dist_km;
+    uniform float u_cloud_offset;
+    uniform float u_eclipse_ring_factor;
+    uniform float u_dark_side_exposure;
+
+    uniform int u_has_day;
+    uniform int u_has_night;
+    uniform int u_has_clouds;
+    uniform float u_night_lod;
+
+    uniform sampler2D u_tex_day;
+    uniform sampler2D u_tex_night;
+    uniform sampler2D u_tex_clouds;
+
+    out vec4 out_color;
+
+    void main() {
+        float px = gl_FragCoord.x - 0.5;
+        float py = u_ch - gl_FragCoord.y - 0.5;
+        float gx = (px - u_ex) / u_r_earth;
+        float gy = (py - u_ey) / u_r_earth;
+        float dist_sq = gx * gx + gy * gy;
+
+        if (dist_sq <= 1.0) {
+            float gz = sqrt(1.0 - dist_sq);
+            vec3 n_enu = gx * u_e_x_cam - gy * u_e_y_cam + gz * u_e_z_cam;
+
+            float px_e = dot(n_enu, u_x_ecef);
+            float py_e = dot(n_enu, u_y_ecef);
+            float pz_e = dot(n_enu, u_z_ecef);
+
+            float lat_pt = asin(clamp(pz_e, -1.0, 1.0));
+            float lon_pt = atan(py_e, px_e);
+
+            float u = (lon_pt + PI) / (2.0 * PI);
+            float v = (PI * 0.5 - lat_pt) / PI;
+
+            vec3 day_rgb;
+            if (u_has_day == 1) {
+                day_rgb = texture(u_tex_day, vec2(u, v)).rgb;
+            } else {
+                float continent = sin(lon_pt * 2.1 + 0.4) * cos(lat_pt * 2.3)
+                                + 0.55 * cos(lon_pt * 4.7 - 1.1) * sin(lat_pt * 3.8 + 0.3)
+                                + 0.30 * sin(lon_pt * 9.0 + lat_pt * 7.0);
+                bool is_land = continent > 0.18;
+                bool is_ice = abs(lat_pt) > radians(72.0 - 8.0 * continent);
+                day_rgb = vec3(22.0 / 255.0, 72.0 / 255.0, 158.0 / 255.0);
+                if (is_land) day_rgb = vec3(64.0 / 255.0, 118.0 / 255.0, 62.0 / 255.0);
+                if (is_ice) day_rgb = vec3(235.0 / 255.0, 242.0 / 255.0, 248.0 / 255.0);
+            }
+
+            vec3 night_rgb;
+            if (u_has_night == 1) {
+                vec3 raw_night = textureLod(u_tex_night, vec2(u, v), u_night_lod).rgb;
+                vec3 clean_night = clamp((raw_night - 0.055) / 0.945, 0.0, 1.0);
+                night_rgb = pow(clean_night, vec3(0.88)) * (1.15 * u_dark_side_exposure);
+            } else {
+                float continent = sin(lon_pt * 2.1 + 0.4) * cos(lat_pt * 2.3)
+                                + 0.55 * cos(lon_pt * 4.7 - 1.1) * sin(lat_pt * 3.8 + 0.3);
+                bool urban = (continent > 0.22)
+                          && (abs(lat_pt) < radians(60.0))
+                          && (sin(lon_pt * 28.0) * cos(lat_pt * 34.0) > 0.65);
+                night_rgb = urban ? vec3(235.0 / 255.0, 175.0 / 255.0, 80.0 / 255.0) * u_dark_side_exposure
+                                  : vec3(0.0);
+            }
+
+            float cos_sun = dot(n_enu, u_sun_from_earth_enu);
+            float twilight_t = clamp((cos_sun + 0.07) / 0.15, 0.0, 1.0);
+            float day_blend = twilight_t * twilight_t * (3.0 - 2.0 * twilight_t);
+            float sun_diffuse = pow(clamp(cos_sun, 0.0, 1.0), 0.78);
+
+            if (u_moon_sun_dot > 0.0) {
+                vec3 pts_earth_km = R_EARTH * n_enu;
+                vec3 rel_to_moon = pts_earth_km - u_moon_from_earth_enu;
+                float along_sun = dot(rel_to_moon, u_sun_from_earth_enu);
+                if (along_sun < 0.0) {
+                    float dist_behind = -along_sun;
+                    vec3 perp_vec = rel_to_moon + dist_behind * u_sun_from_earth_enu;
+                    float perp_dist = length(perp_vec);
+
+                    float r_penumbra = R_MOON + dist_behind * (R_SUN + R_MOON) / max(1.0, u_sun_dist_km);
+                    float r_umbra = max(0.0, R_MOON - dist_behind * (R_SUN - R_MOON) / max(1.0, u_sun_dist_km));
+
+                    if (perp_dist < r_penumbra) {
+                        float pen_t = clamp(
+                            (perp_dist - r_umbra) / max(r_penumbra - r_umbra, 1.0),
+                            0.0,
+                            1.0
+                        );
+                        float shadow_atten = 0.08 + 0.92 * (pen_t * pen_t * (3.0 - 2.0 * pen_t));
+                        sun_diffuse *= shadow_atten;
+                    }
+                }
+            }
+
+            float terminator_glow = (cos_sun > -0.08) ? exp(-pow((cos_sun - 0.01) / 0.095, 2.0)) : 0.0;
+
+            vec3 lit_day_rgb = day_rgb * (0.02 + 0.98 * sun_diffuse);
+            lit_day_rgb.r += (36.0 / 255.0) * terminator_glow;
+            lit_day_rgb.g += (12.0 / 255.0) * terminator_glow;
+
+            if (u_has_clouds == 1) {
+                float u_cloud = fract(u - u_cloud_offset);
+                float c_raw = texture(u_tex_clouds, vec2(u_cloud, v)).r;
+                float cloud_alpha = pow(clamp((c_raw - 0.04) / 0.96, 0.0, 1.0), 0.90) * 0.92;
+
+                vec3 cloud_lit_rgb = vec3(
+                    (252.0 / 255.0) * (0.03 + 0.97 * sun_diffuse) + (46.0 / 255.0) * terminator_glow,
+                    (253.0 / 255.0) * (0.03 + 0.97 * sun_diffuse) + (16.0 / 255.0) * terminator_glow,
+                    1.0 * (0.04 + 0.96 * sun_diffuse)
+                );
+                lit_day_rgb = mix(lit_day_rgb, cloud_lit_rgb, cloud_alpha);
+                night_rgb *= (1.0 - 0.55 * cloud_alpha);
+            }
+
+            float twilight_cities = pow(clamp((0.04 - cos_sun) / 0.14, 0.0, 1.0), 1.4);
+            vec3 out_rgb = lit_day_rgb * day_blend + night_rgb * twilight_cities;
+
+            float limb_geom = pow(1.0 - gz, 2.6);
+            float day_limb = limb_geom * clamp(cos_sun + 0.22, 0.0, 1.0) * (1.0 - 0.75 * u_eclipse_ring_factor);
+            float ecl_limb = limb_geom * u_eclipse_ring_factor;
+
+            out_rgb.r += (75.0 / 255.0) * day_limb + (245.0 / 255.0) * ecl_limb;
+            out_rgb.g += (155.0 / 255.0) * day_limb + (95.0 / 255.0) * ecl_limb;
+            out_rgb.b += (250.0 / 255.0) * day_limb + (35.0 / 255.0) * ecl_limb;
+
+            out_color = vec4(clamp(out_rgb, 0.0, 1.0), 1.0);
+        } else if (dist_sq <= 1.28) {
+            float dist_h = sqrt(dist_sq);
+            float h_fade = pow(clamp(1.0 - (dist_h - 1.0) / 0.13, 0.0, 1.0), 2.0);
+            vec3 n_halo = gx * u_e_x_cam - gy * u_e_y_cam;
+            float sun_facing = clamp(dot(n_halo, u_sun_from_earth_enu) + 0.30, 0.04, 1.0);
+            float halo_strength = max(sun_facing, 0.85 * u_eclipse_ring_factor);
+
+            vec3 halo_col = mix(
+                vec3(75.0 / 255.0, 155.0 / 255.0, 250.0 / 255.0),
+                vec3(235.0 / 255.0, 88.0 / 255.0, 32.0 / 255.0),
+                u_eclipse_ring_factor
+            );
+            float alpha = clamp((150.0 / 255.0) * h_fade * halo_strength, 0.0, 1.0);
+            out_color = vec4(halo_col, alpha);
+        } else {
+            discard;
+        }
     }
 `;
