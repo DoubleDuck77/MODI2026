@@ -1,60 +1,243 @@
 <!doctype html>
-<html lang="pl">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MODI 2026 · Ziemia–Księżyc</title>
+  <title>LunarSims | MODI 2026</title>
+  <meta name="description" content="Pick any point on the Moon and see its sunlight, its view of Earth, its soil and the orbits above it, for any moment from 2000 to 2100.">
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="/css/main.css">
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
-      }
-    }
-  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=B612:ital,wght@0,400;0,700;1,400&family=Michroma&display=swap">
+  <link rel="stylesheet" href="/css/landing.css">
 </head>
 <body>
-  <header class="toolbar">
-    <h1 class="brand">MODI 2026 <span>Ziemia–Księżyc</span></h1>
-    <a class="sim-link" href="/sim.html">Symulacje →</a>
-    <div class="controls">
-      <button id="play-btn" type="button" aria-pressed="false">▶ Play</button>
-      <label>Czas UTC <input id="time-input" type="datetime-local" step="3600"></label>
-      <label>Prędkość
-        <select id="speed-select">
-          <option value="1">1 h/s</option>
-          <option value="24">1 dzień/s</option>
-          <option value="168">1 tydzień/s</option>
-          <option value="720">1 miesiąc/s</option>
-        </select>
-      </label>
-      <label>Widok
-        <select id="view-select">
-          <option value="space">Kosmos</option>
-          <option value="surface">Powierzchnia Księżyca</option>
-        </select>
-      </label>
-      <label>Szer. <input id="lat-input" type="number" min="-90" max="90" step="0.1"></label>
-      <label>Dł. <input id="lon-input" type="number" min="-180" max="180" step="0.1"></label>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <a class="brand" href="/">LunarSims <span>MODI 2026</span></a>
+      <nav aria-label="Tools">
+        <a href="/sim.html">Simulator</a>
+        <a href="/dwa%20wykresy.html">Compare sites</a>
+      </nav>
     </div>
-    <input id="time-slider" type="range" aria-label="Oś czasu 2000–2100">
   </header>
 
-  <main id="viewport" aria-label="Scena 3D"></main>
+  <main id="main">
+    <section class="hero wrap" aria-labelledby="hero-title">
+      <div class="hero-text">
+        <h1 id="hero-title">Where on the Moon should we build?</h1>
+        <p class="lede">LunarSims answers that for any point on the Moon. Pick a latitude and longitude and see how often the Sun clears the local hills, whether Earth stays in view for radio contact, what the soil is made of and how spacecraft pass overhead, at any moment between 2000 and 2100.</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="/sim.html">Open the simulator</a>
+          <a class="btn" href="/dwa%20wykresy.html">Compare two sites</a>
+        </div>
+      </div>
 
-  <aside class="sidebar">
-    <section>
-      <h2>Warstwy</h2>
-      <div id="layer-panel"></div>
+      <figure class="moonmap">
+        <div class="moonmap-frame">
+          <img src="/img/moon-map.jpg" width="2048" height="1024" alt="Flat map of the whole Moon, near side in the middle, with two sites, a search radius and an orbit track drawn on it.">
+          <svg class="moonmap-overlay" viewBox="0 0 360 180" preserveAspectRatio="none" aria-hidden="true">
+            <g class="graticule">
+              <path d="M30 0V180M60 0V180M90 0V180M120 0V180M150 0V180M180 0V180M210 0V180M240 0V180M270 0V180M300 0V180M330 0V180M0 30H360M0 60H360M0 90H360M0 120H360M0 150H360"/>
+            </g>
+            <path class="ring" d="M155.0 61.8L155.8 61.8L156.6 61.9L157.4 62.1L158.2 62.3L158.9 62.6L159.6 62.9L160.3 63.3L160.9 63.8L161.5 64.3L162.0 64.8L162.4 65.4L162.8 66.1L163.1 66.7L163.4 67.4L163.6 68.1L163.7 68.8L163.8 69.5L163.8 70.2L163.7 70.9L163.6 71.6L163.4 72.3L163.1 73.0L162.8 73.6L162.4 74.3L162.0 74.9L161.5 75.4L161.0 75.9L160.4 76.4L159.8 76.8L159.2 77.2L158.6 77.5L157.9 77.8L157.2 78.0L156.5 78.1L155.7 78.2L155.0 78.2L154.3 78.2L153.5 78.1L152.8 78.0L152.1 77.8L151.4 77.5L150.8 77.2L150.2 76.8L149.6 76.4L149.0 75.9L148.5 75.4L148.0 74.9L147.6 74.3L147.2 73.6L146.9 73.0L146.6 72.3L146.4 71.6L146.3 70.9L146.2 70.2L146.2 69.5L146.3 68.8L146.4 68.1L146.6 67.4L146.9 66.7L147.2 66.1L147.6 65.4L148.0 64.8L148.5 64.3L149.1 63.8L149.7 63.3L150.4 62.9L151.1 62.6L151.8 62.3L152.6 62.1L153.4 61.9L154.2 61.8Z"/>
+            <path class="track" pathLength="1" d="M160.0 90.0L165.9 88.8L171.8 87.7L177.7 86.6L183.6 85.5L189.5 84.4L195.5 83.4L201.5 82.5L207.5 81.7L213.5 81.0L219.5 80.3L225.6 79.8L231.7 79.4L237.8 79.0L243.9 78.9L250.0 78.8L256.1 78.9L262.2 79.0L268.3 79.4L274.4 79.8L280.5 80.3L286.5 81.0L292.5 81.7L298.5 82.5L304.5 83.4L310.5 84.4L316.4 85.5L322.3 86.6L328.2 87.7L334.1 88.8L340.0 90.0L345.9 91.2L351.8 92.3L357.7 93.4L360.0 93.4M0.0 94.5L3.6 94.5L9.5 95.6L15.5 96.6L21.5 97.5L27.5 98.3L33.5 99.0L39.5 99.7L45.6 100.2L51.7 100.6L57.8 101.0L63.9 101.1L70.0 101.2L76.1 101.1L82.2 101.0L88.3 100.6L94.4 100.2L100.5 99.7L106.5 99.0L112.5 98.3L118.5 97.5L124.5 96.6L130.5 95.6L136.4 94.5L142.3 93.4L148.2 92.3L154.1 91.2L160.0 90.0"/>
+          </svg>
+          <span class="pin pin-a" style="left:50%;top:99.72%"><b>A</b></span>
+          <span class="pin pin-b" style="left:56.52%;top:49.63%"><b>B</b></span>
+          <span class="tag tag-a" style="left:50%;top:99.72%">89.5° S, 0° E</span>
+          <span class="tag tag-b" style="left:56.52%;top:49.63%">Apollo 11</span>
+          <span class="tag tag-ring" style="left:43.06%;top:34.3%">R = 250 km</span>
+          <span class="tag tag-track" style="left:69.4%;top:43.8%">PFS-2 orbit</span>
+          <span class="axis axis-lat" style="top:16.67%">60° N</span>
+          <span class="axis axis-lat" style="top:50%">0°</span>
+          <span class="axis axis-lat" style="top:83.33%">60° S</span>
+          <span class="axis axis-lon" style="left:25%">90° W</span>
+          <span class="axis axis-lon" style="left:75%">90° E</span>
+        </div>
+        <figcaption>The whole Moon on one flat map: the texture used by the Orbit tab, with the near side in the middle. A and B are the two sites compared further down. The ring is the Resources tab's default 250&nbsp;km search area around 20°&nbsp;N, 25°&nbsp;W. The curve is one revolution of Apollo&nbsp;16's PFS-2 subsatellite (inclination 11.2°), a preset in the Orbit tab.</figcaption>
+      </figure>
     </section>
-    <section>
-      <h2>Inspektor kontraktów</h2>
-      <div id="inspector"></div>
-    </section>
-  </aside>
 
-  <script type="module" src="/js/main.js"></script>
+    <section class="questions wrap" aria-labelledby="questions-title">
+      <h2 id="questions-title">Four things a base site has to get right</h2>
+      <div class="question-grid">
+        <article class="question q-sun">
+          <h3>Sunlight</h3>
+          <p class="ask">Is there power?</p>
+          <p>For every hour we compute the Sun's altitude and compare it with the real terrain horizon in that direction, built from LRO LOLA elevation data. From that comes the visible part of the solar disc, the power reaching a panel that lies flat, stands upright or tracks the Sun, and the energy it collects over time.</p>
+          <p class="where">In <a href="/dwa%20wykresy.html">Compare sites</a></p>
+        </article>
+        <article class="question q-earth">
+          <h3>Earth contact</h3>
+          <p class="ask">Can we talk to home?</p>
+          <p>Earth hangs almost still in the lunar sky, but libration makes it wobble by several degrees. Near the poles it slips behind the hills, and direct radio contact ends. We track Earth's altitude against the same terrain horizon.</p>
+          <p class="where">In <a href="/dwa%20wykresy.html">Compare sites</a> and the simulator's Surface tab</p>
+        </article>
+        <article class="question">
+          <h3>Resources</h3>
+          <p class="ask">What is in the ground?</p>
+          <p>Lunar Prospector's gamma-ray spectrometer mapped the surface chemistry: FeO, TiO₂, Al₂O₃, CaO, MgO, SiO₂, K₂O and oxygen in weight percent, thorium and uranium in ppm. Choose a point and a radius and get the averages, a contour of the area and a CSV export.</p>
+          <p class="where">In the simulator's <a href="/sim.html">Resources tab</a></p>
+        </article>
+        <article class="question">
+          <h3>Orbit</h3>
+          <p class="ask">How does a spacecraft stay up there?</p>
+          <p>The Moon's gravity is lumpy. Mass concentrations under the maria (mascons) bend low orbits, and some decay into the ground. The Orbit tab propagates a spacecraft in that field, with Earth and Sun perturbations, and draws its ground track. Presets include LRO, Gateway's halo orbit, Luna&nbsp;10 and PFS-2.</p>
+          <p class="where">In the simulator's <a href="/sim.html">Orbit tab</a></p>
+        </article>
+      </div>
+    </section>
+
+    <section class="compare" aria-labelledby="compare-title">
+      <div class="wrap">
+        <h2 id="compare-title">One month, two sites</h2>
+        <p class="intro">We ran the comparison tool for 1–30 December 2026, hourly, in UTC, at two very different places. Every number below comes from the same backend you can use yourself.</p>
+
+        <div class="table-scroll">
+          <table class="cmp-table">
+            <caption class="sr-only">Site A and site B compared, 1–30 December 2026</caption>
+            <thead>
+              <tr>
+                <th scope="col"><span class="sr-only">Measure</span></th>
+                <th scope="col"><span class="site-key">A</span> 89.5° S, 0° E<small>Near the south pole</small></th>
+                <th scope="col"><span class="site-key">B</span> 0.67° N, 23.47° E<small>Apollo 11, Mare Tranquillitatis</small></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="row-sun">
+                <th scope="row">Sun above the local terrain</th>
+                <td>30% of the time</td>
+                <td>49% of the time</td>
+              </tr>
+              <tr class="row-sun">
+                <th scope="row">Sun altitude</th>
+                <td>1.2° to 2.0°</td>
+                <td>−89° to 88°</td>
+              </tr>
+              <tr class="row-earth">
+                <th scope="row">Earth above the local terrain</th>
+                <td>33% of the time</td>
+                <td>100% of the time</td>
+              </tr>
+              <tr class="row-earth">
+                <th scope="row">Earth altitude</th>
+                <td>−7.2° to 5.9°</td>
+                <td>57° to 72°</td>
+              </tr>
+              <tr class="row-sun">
+                <th scope="row">Energy on a sun-tracking panel</th>
+                <td>960 MJ/m²</td>
+                <td>1,739 MJ/m²</td>
+              </tr>
+              <tr class="row-sun">
+                <th scope="row">Energy on a flat panel</th>
+                <td>26 MJ/m²</td>
+                <td>1,110 MJ/m²</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="charts" id="charts">
+          <div class="chart-row" data-body="sun">
+            <div class="legend">
+              <span class="key key-sun">Sun altitude</span>
+              <span class="key key-ground">Terrain horizon in the Sun's direction</span>
+            </div>
+            <div class="chart-pair">
+              <figure class="chart" data-site="A" data-body="sun"><figcaption><span class="site-key">A</span> Sun, near the south pole</figcaption><div class="plot"></div></figure>
+              <figure class="chart" data-site="B" data-body="sun"><figcaption><span class="site-key">B</span> Sun, Apollo 11</figcaption><div class="plot"></div></figure>
+            </div>
+          </div>
+          <div class="chart-row" data-body="earth">
+            <div class="legend">
+              <span class="key key-earth">Earth altitude</span>
+              <span class="key key-ground">Terrain horizon in Earth's direction</span>
+            </div>
+            <div class="chart-pair">
+              <figure class="chart" data-site="A" data-body="earth"><figcaption><span class="site-key">A</span> Earth, near the south pole</figcaption><div class="plot"></div></figure>
+              <figure class="chart" data-site="B" data-body="earth"><figcaption><span class="site-key">B</span> Earth, Apollo 11</figcaption><div class="plot"></div></figure>
+            </div>
+          </div>
+          <p class="chart-note">Each chart has its own vertical scale: at site A the whole sky story happens within a few degrees of the horizon. Hover or tap a chart to read the values, plotted every 2 hours. <a href="/data/site-comparison-2026-12.json">Download the data (JSON)</a></p>
+        </div>
+
+        <div class="takeaway">
+          <p>At the pole the Sun never sets in the mathematical sense. It circles 1–2° above the horizon all month. But at this spot the surrounding terrain stands higher for 70% of the time, and Earth drops behind it for two thirds of the month. A ridge a few kilometres away can see far more of both, so the terrain horizon is computed from elevation data for every site instead of being assumed flat.</p>
+          <p>Apollo 11's site has the opposite trade-off: two weeks of day, two weeks of night, and Earth always high in the sky.</p>
+        </div>
+        <a class="btn btn-primary" href="/dwa%20wykresy.html">Run your own comparison</a>
+      </div>
+    </section>
+
+    <section class="inside wrap" aria-labelledby="inside-title">
+      <h2 id="inside-title">Inside the simulator</h2>
+      <p class="intro">One page, three tabs, one clock. Press Play or type a UTC time and every view follows.</p>
+      <dl class="tabs-list">
+        <div>
+          <dt>Surface</dt>
+          <dd>Stand anywhere on the Moon and look around. The terrain is built in your browser with WebGL2 from LOLA elevation and albedo tiles, and the sky shows the Sun, Earth and the stars for the chosen time. A port of the team's <code>geografia.py</code>.</dd>
+        </div>
+        <div>
+          <dt>Orbit</dt>
+          <dd>Launch a spacecraft into the Moon's uneven gravity field, including mascons and Earth and Sun perturbations, and watch its orbit, ground track and diagnostics charts evolve. Physics runs on the server in batches and the browser plays them back smoothly. A port of <code>neworb.py</code>.</dd>
+        </div>
+        <div>
+          <dt>Resources</dt>
+          <dd>Pick a latitude, a longitude and a radius R. The map outlines the area and the charts show the average abundance of each element inside it, ready to export as CSV. A port of <code>radius.py</code>.</dd>
+        </div>
+      </dl>
+      <a class="btn" href="/sim.html">Open the simulator</a>
+    </section>
+
+    <section class="pipeline wrap" aria-labelledby="pipeline-title">
+      <h2 id="pipeline-title">How it works</h2>
+      <ol class="steps">
+        <li>
+          <h3>Data</h3>
+          <p>Hourly Sun and Moon positions from JPL Horizons for 2000–2100, LRO LOLA elevation, global Moon mosaics and Lunar Prospector composition maps.</p>
+        </li>
+        <li>
+          <h3>Models</h3>
+          <p>The team's Python scripts do the science. The backend imports them as they are, so the physics on the website is the physics in the scripts.</p>
+        </li>
+        <li>
+          <h3>API</h3>
+          <p>A FastAPI backend wraps each script as a module with a typed contract. Heavy numerics stay on the server, with numba for orbit propagation.</p>
+        </li>
+        <li>
+          <h3>Browser</h3>
+          <p>The pages draw the results: WebGL2 for terrain and sky, canvas for maps and charts.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="details wrap" aria-labelledby="details-title">
+      <h2 id="details-title">Data and conventions</h2>
+      <dl class="facts">
+        <div><dt>Ephemerides</dt><dd>JPL Horizons, geocentric, ecliptic J2000. Hourly Sun and Moon vectors from 1 January 2000 to 1 January 2100, stored in metres in <code>coords/&lt;year&gt;.csv</code>.</dd></div>
+        <div><dt>Elevation</dt><dd>LRO LOLA gridded topography from NASA PDS, read at 64 pixels per degree with HTTP range requests. Falls back to 16 pixels per degree, then to USGS Astrogeology.</dd></div>
+        <div><dt>Composition</dt><dd>Lunar Prospector gamma-ray spectrometer maps from the NASA PDS Geosciences Node, registered to a 2:1 equirectangular base map.</dd></div>
+        <div><dt>Constants</dt><dd>Lunar radius 1,737.4&nbsp;km, Earth radius 6,371&nbsp;km, solar constant 1,361&nbsp;W/m².</dd></div>
+        <div><dt>Time</dt><dd>UTC everywhere. The comparison page also accepts a local time zone, by country or UTC offset, and converts it.</dd></div>
+        <div><dt>Angles</dt><dd>Degrees. Azimuth is measured from north, clockwise (east is 90°). East longitude is positive.</dd></div>
+      </dl>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <p>Built for MODI 2026 by the LunarSims team.</p>
+      <nav aria-label="For developers">
+        <a href="/docs">API reference</a>
+        <a href="/layers.html">Layer inspector</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script type="module" src="/js/landing.js"></script>
 </body>
 </html>
