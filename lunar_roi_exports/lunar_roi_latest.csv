@@ -1,0 +1,11 @@
+﻿resource_key,resource_name,unit,latitude_deg,longitude_deg,radius_km,surface_area_km2,roi_weighted_mean,lunar_global_mean,diff_vs_global_pct,roi_min,roi_max,data_source
+SiO2,Silica (SiO₂),wt. %,20.0,-25.0,250.0,196010.99,31.8006,42.2394,-24.71,27.0579,36.1457,"NASA PDS LP-GRS 5° (silicon5d.txt, Si -> SiO₂)"
+O,Regolith-Bound Oxygen (O),wt. %,20.0,-25.0,250.0,196010.99,41.5827,44.5255,-6.61,40.7833,42.7988,NASA PDS LP-GRS 5° (oxygen5d.txt)
+TiO2,Titanium Dioxide / Ilmenite (TiO₂),wt. %,20.0,-25.0,250.0,196010.99,4.6798,1.2218,283.03,0.2693,10.5238,"NASA PDS LP-GRS 2° (titanium2d.txt, Ti -> TiO₂)"
+FeO,Iron Oxide (FeO),wt. %,20.0,-25.0,250.0,196010.99,17.2283,8.2241,109.49,9.4892,22.37,"NASA PDS LP-GRS 0.5° (ironhd.txt, Lawrence et al. 2002)"
+Th,Thorium – KREEP Tracer (Th),ppm,20.0,-25.0,250.0,196010.99,7.5262,2.4022,213.31,5.3554,12.4492,"NASA PDS LP-GRS 0.5° (thoriumhd.txt, Lawrence et al. 2002)"
+U,Uranium – KREEP Tracer (U),ppm,20.0,-25.0,250.0,196010.99,2.4049,0.5868,309.82,1.6192,3.6062,"NASA PDS LP-GRS 5° (uranium5d.txt, Prettyman et al. 2002)"
+K2O,Potassium Oxide – KREEP (K₂O),wt. %,20.0,-25.0,250.0,196010.99,0.2642,0.0821,221.95,0.1483,0.4684,"NASA PDS LP-GRS 2° (potassium2d.txt, K ppm -> K₂O %)"
+Al2O3,Aluminum Oxide / Anorthosite (Al₂O₃),wt. %,20.0,-25.0,250.0,196010.99,15.1062,24.4204,-38.14,7.4924,22.7992,"NASA PDS LP-GRS 5° (aluminum5d.txt, Al -> Al₂O₃)"
+MgO,Magnesium Oxide (MgO),wt. %,20.0,-25.0,250.0,196010.99,14.4093,8.7539,64.6,11.7148,17.1067,"NASA PDS LP-GRS 5° (magnesium5d.txt, Mg -> MgO)"
+CaO,Calcium Oxide (CaO),wt. %,20.0,-25.0,250.0,196010.99,12.2473,15.1482,-19.15,5.8988,15.7964,"NASA PDS LP-GRS 5° (calcium5d.txt, Ca -> CaO)"
