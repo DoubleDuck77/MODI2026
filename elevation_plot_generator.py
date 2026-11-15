@@ -46,7 +46,7 @@ except ImportError:
 DATA_POCZATEK = "2026-12-08 00:00"   # Format: "YYYY-MM-DD HH:MM" (czas lokalny dla KRAJ / REGION)
 DATA_KONIEC = "2027-12-08 23:59"     # Format: "YYYY-MM-DD HH:MM" (czas lokalny dla KRAJ / REGION)
 
-KRAJ = "Polska"                      # Nazwa kraju zgodna z time_zone_converter.py
+KRAJ = "Poland"                      # Nazwa kraju zgodna z time_zone_converter.py
 REGION = None                        # Region/stan dla krajów wielostrefowych (np. "Kalifornia"), w przeciwnym razie None
 
 # Współrzędne obserwatora na Księżycu [°]
