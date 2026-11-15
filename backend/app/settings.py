@@ -13,7 +13,7 @@ class Settings:
     frontend_dir: Path
     textures_dir: Path
     coords_dir: Path
-    scripts_dir: Path  # katalog z root-skryptami (newlunar.py, neworb.py, geografia.py, radius.py)
+    scripts_dir: Path  # katalog z root-skryptami (neworb.py, geografia.py, radius.py, generator.py)
     pds_data_dir: Path  # mapy zasobów PDS (lunar_pds_data)
 
     @property

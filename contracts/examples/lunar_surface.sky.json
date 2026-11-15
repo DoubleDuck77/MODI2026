@@ -16,38 +16,38 @@
     "lat_deg": -43.31,
     "lon_deg": -11.36
   },
-  "eye_height_m": 2.0,
-  "observer_elevation_m": -1626.0809071623044,
-  "observer_radius_km": 1735.7759190928377,
+  "eye_height_m": 15.0,
+  "observer_elevation_m": -1614.8125846958508,
+  "observer_radius_km": 1735.8001874153044,
   "earth": {
-    "alt_deg": 52.021957958336706,
+    "alt_deg": 52.02195557928594,
     "az_deg": 16.4627295435004,
-    "distance_km": 359656.21127099684,
-    "angular_radius_deg": 1.0149984710719708,
-    "horizon_alt_deg": 2.667330716453958,
+    "distance_km": 359656.19214157347,
+    "angular_radius_deg": 1.014998525063442,
+    "horizon_alt_deg": 2.642633776476074,
     "dir_enu": [
-      0.5901323319575104,
-      0.17438768219932338,
-      0.788246641017606
+      0.5901323633455178,
+      0.17438769147466987,
+      0.7882466154664853
     ],
     "visible": true,
-    "status": "WIDOCZNA"
+    "status": "VISIBLE"
   },
   "sun": {
-    "alt_deg": 32.70906249187697,
+    "alt_deg": 32.709062483939604,
     "az_deg": 55.45189087203421,
-    "distance_km": 147401378.91584232,
-    "angular_radius_deg": 0.27067244418295894,
-    "horizon_alt_deg": 3.3754433332832763,
+    "distance_km": 147401378.90272838,
+    "angular_radius_deg": 0.27067244420704023,
+    "horizon_alt_deg": 3.3531391041343723,
     "dir_enu": [
-      0.477170638123981,
-      0.6930402251403902,
-      0.5403734157503588
+      0.47717063816643374,
+      0.6930402252020482,
+      0.5403734156337935
     ],
     "horizon_visible_fraction": 1.0,
     "eclipse_occultation": 0.0,
     "effective_visibility": 1.0,
-    "status": "WIDOCZNE"
+    "status": "VISIBLE"
   },
   "eclipse_ring_factor": 0.0,
   "eclipse_red_glow": 0.0,

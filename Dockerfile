@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ ./
 # Root-skrypty importowane przez fasady (tylko import, patrz app/core/legacy.py)
-COPY newlunar.py neworb.py geografia.py radius.py generator.py /srv/
+COPY neworb.py geografia.py radius.py generator.py /srv/
 COPY contracts/ /srv/contracts/
 COPY frontend/ /srv/frontend/
 

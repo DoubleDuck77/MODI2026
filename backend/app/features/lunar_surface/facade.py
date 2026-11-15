@@ -1,21 +1,25 @@
-"""Fasada ``lunar_surface``: cienki adapter na ``newlunar.py`` (tylko import, bez zmian).
+"""Fasada ``lunar_surface``: cienki adapter na ``geografia.py`` (tylko import, bez zmian).
 
-Teren: jedna instancja ``newlunar.LunarTerrain3D`` z mapami v3 (tę gałąź wybiera
-``load_or_download_lunar_maps`` przy obecnych plikach, ``newlunar.py:153-160``). Instancja ma stan
-(okno siatki, profil horyzontu bieżącego obserwatora), więc każde użycie jest pod jednym lockiem.
+Teren: jedna bazowa instancja ``geografia.LunarTerrain3D`` z mapami v3 (tę gałąź wybiera
+``load_or_download_lunar_maps``, ``geografia.py:358-365``), tworzona leniwie bez ``gl``. Rysuje
+przeglądarka (WebGL2); serwer liczy tylko geometrię obserwatora (grunt, nachylenie, horyzont),
+niebo i serwuje kafle DEM/albedo.
 
-Niebo: ``newlunar.get_topocentric_vectors`` + wzory pętli głównej ``newlunar.py:1960-1992``
-i statusy HUD ``newlunar.py:2081-2091``.
+Wątki: ``update_observer`` i metody, które woła (``geografia.py:1734-1956``), jedynie
+przypisują atrybuty (nie piszą w miejscu do współdzielonych tablic), więc każde żądanie robi
+``copy.copy(base)`` i woła ``update_observer`` na kopii — bez globalnego locka.
+
+Niebo: ``get_topocentric_vectors`` + wzory pętli głównej ``geografia.py:2802-2834`` i statusy
+HUD ``geografia.py:2951-2965``.
 """
 
-import base64
+import copy
 import math
 import threading
 from collections import OrderedDict
-from contextlib import contextmanager
 
 import numpy as np
-from fastapi import HTTPException
+from fastapi import APIRouter, HTTPException, Response
 
 from app.core.contracts import CONTRACT_VERSION, ReferenceFrame, ResponseMeta, SelenoPoint
 from app.core.facade import BaseFacade
@@ -24,28 +28,28 @@ from app.features.lunar_surface.contract import (
     EarthInSky,
     HorizonProfile,
     LunarSky,
-    LunarTerrainPatch,
+    ObserverGeometry,
+    ObserverGeometryQuery,
     StarField,
     SunInSky,
+    SurfaceCatalog,
     SurfaceQuery,
-    TerrainQuery,
+    TileSetInfo,
 )
 from app.features.lunar_surface.year_data import load_year, time_index
 
 DEM_FILE = "moon_dem_nasa_16ppd_v3.npy"
 COLOR_FILE = "moon_color_nasa_8k_v3.npy"
-DEM_SOURCE = "NASA LOLA 16 px/deg"  # ten sam opis co newlunar.py:160
-ALBEDO_SCALE = 0.3  # LUT newlunar: 0.055 + 0.22·v^1.15 ∈ [0.055, 0.275]
-LOCK_TIMEOUT_S = 1.0     # dłużej nie czekamy na zajęty teren — 503, klient ponawia
+DEM_SOURCE = "NASA LOLA 16 px/deg"  # ten sam opis co geografia.py:365
+DEM_TILE = 180      # 2880×5760 → 16×32 kafli (11.25°)
+ALBEDO_TILE = 256   # 4096×8192 → 16×32 kafli
 OBSERVER_CACHE_SIZE = 64
+TILE_CACHE_CONTROL = "public, max-age=86400"
+TILE_URL = "/api/v1/lunar_surface/tiles/{layer}/{{ty}}/{{tx}}"
 
 
 def _vec(v) -> tuple:
     return (float(v[0]), float(v[1]), float(v[2]))
-
-
-def _b64(a: np.ndarray, dtype: str) -> str:
-    return base64.b64encode(np.ascontiguousarray(a, dtype=dtype).tobytes()).decode("ascii")
 
 
 class LunarSurfaceFacade(BaseFacade):
@@ -53,12 +57,12 @@ class LunarSurfaceFacade(BaseFacade):
 
     def __init__(self, ctx) -> None:
         super().__init__(ctx)
-        self.nl = import_root_script("newlunar", ctx.settings.scripts_dir)
-        self._lock = threading.Lock()
+        self.geo = import_root_script("geografia", ctx.settings.scripts_dir)
         self._terrain_obj = None
-        # (lat, lon, eye) → dane obserwatora z update_observer: sky dla znanego obserwatora
-        # nie potrzebuje locka ani przeliczania okna.
-        self._observers: "OrderedDict[tuple, dict]" = OrderedDict()
+        self._terrain_lock = threading.Lock()   # tylko budowa bazowego terenu
+        # (lat, lon, eye) → kopia terenu po update_observer (LRU); sky dla znanego obserwatora
+        # nie przelicza horyzontu.
+        self._observers: "OrderedDict[tuple, object]" = OrderedDict()
         self._observers_lock = threading.Lock()
 
     # --- pomocnicze ----------------------------------------------------------------------
@@ -71,107 +75,127 @@ class LunarSurfaceFacade(BaseFacade):
         )
 
     def _terrain(self):
-        """Leniwie tworzy ``LunarTerrain3D`` (wywoływać pod ``self._lock``)."""
-        if self._terrain_obj is None:
-            tex = self.ctx.settings.textures_dir
-            dem_path, color_path = tex / DEM_FILE, tex / COLOR_FILE
-            if not (dem_path.is_file() and color_path.is_file()):
-                raise HTTPException(503, f"Brak map terenu v3 ({DEM_FILE}, {COLOR_FILE}) w {tex}")
-            dem = np.load(dem_path, mmap_mode="r")
-            color = np.load(color_path, mmap_mode="r")
-            self._terrain_obj = self.nl.LunarTerrain3D(dem, color)
+        """Leniwie tworzy bazowy ``LunarTerrain3D`` (bez ``gl``); równoległe pierwsze wywołania czekają."""
+        if self._terrain_obj is not None:
+            return self._terrain_obj
+        with self._terrain_lock:
+            if self._terrain_obj is None:
+                tex = self.ctx.settings.textures_dir
+                dem_path, color_path = tex / DEM_FILE, tex / COLOR_FILE
+                if not (dem_path.is_file() and color_path.is_file()):
+                    raise HTTPException(503, f"Brak map terenu v3 ({DEM_FILE}, {COLOR_FILE}) w {tex}")
+                dem = np.load(dem_path, mmap_mode="r")
+                color = np.load(color_path, mmap_mode="r")
+                if dem.ndim != 2 or dem.shape[0] % DEM_TILE or dem.shape[1] % DEM_TILE:
+                    raise HTTPException(503, f"DEM {dem.shape} nie dzieli się na kafle {DEM_TILE} px")
+                if color.ndim != 3 or color.shape[2] != 3 or color.shape[0] % ALBEDO_TILE or color.shape[1] % ALBEDO_TILE:
+                    raise HTTPException(503, f"Albedo {color.shape} nie dzieli się na kafle {ALBEDO_TILE} px")
+                self._terrain_obj = self.geo.LunarTerrain3D(dem, color)
         return self._terrain_obj
 
-    @contextmanager
-    def _terrain_locked(self):
-        """Wyłączny dostęp do ``LunarTerrain3D`` z limitem czasu.
-
-        Budowa okna trwa sekundy (na biegunie do minuty), a klient porzucający żądanie nie przerywa
-        synchronicznego handlera — bez limitu porzucone żądania blokowałyby wątki serwera.
-        """
-        if not self._lock.acquire(timeout=LOCK_TIMEOUT_S):
-            raise HTTPException(503, "Teren jest właśnie przeliczany — spróbuj ponownie za chwilę",
-                                headers={"Retry-After": "1"})
-        try:
-            yield self._terrain()
-        finally:
-            self._lock.release()
-
-    def _observe(self, terrain, lat_deg: float, lon_deg: float, eye_height_m: float) -> dict:
-        """``update_observer`` z oknem zależnym tylko od bieżącego zapytania (wywoływać pod lockiem).
-
-        ``LunarTerrain3D`` używa ponownie okna zbudowanego dla wcześniejszego obserwatora, dopóki
-        je pokrywa — wtedy zagęszczenie ``sub`` zależy od historii. W pygame to historia jednego
-        użytkownika; na serwerze byłaby to historia wszystkich klientów. Okno budowane dla innej
-        wysokości oka (inny promień) jest więc odrzucane.
-        """
-        want_rad = terrain.WINDOW_MARGIN * terrain.horizon_range_km(eye_height_m / 1000.0)
-        if terrain.win is not None and abs(terrain.win["rad_km"] - want_rad) > 1e-9:
-            terrain.win = None
-            terrain.cached_lat = terrain.cached_lon = terrain.cached_eye_height_m = None
-        terrain.update_observer(lat_deg, lon_deg, eye_height_m=eye_height_m)
-        entry = {
-            "obs_radius_km": float(terrain.obs_radius_km),
-            "obs_elev_km": float(terrain.obs_elev_km),
-            "az_grid": terrain.az_grid,
-            "horizon_alt": np.array(terrain.horizon_alt, copy=True),
-        }
+    def _observe(self, lat_deg: float, lon_deg: float, eye_height_m: float):
+        """Kopia bazowego terenu z ``update_observer`` dla obserwatora (LRU 64)."""
+        key = (lat_deg, lon_deg, eye_height_m)
         with self._observers_lock:
-            self._observers[(lat_deg, lon_deg, eye_height_m)] = entry
-            self._observers.move_to_end((lat_deg, lon_deg, eye_height_m))
+            t = self._observers.get(key)
+            if t is not None:
+                self._observers.move_to_end(key)
+                return t
+        t = copy.copy(self._terrain())
+        t.update_observer(lat_deg, lon_deg, eye_height_m=eye_height_m)
+        with self._observers_lock:
+            self._observers[key] = t
+            self._observers.move_to_end(key)
             while len(self._observers) > OBSERVER_CACHE_SIZE:
                 self._observers.popitem(last=False)
-        return entry
+        return t
 
-    def _cell_albedo(self, terrain, lat_deg, lon_deg, radii_km, daz_rad):
-        """(n_r, n_az, 3) albedo — średnia z ``win["sat_a"]`` po kwadracie komórki (pod lockiem)."""
-        nl, w = self.nl, terrain.win
-        sub = w.get("sub", 1)
-        fr, fc = terrain._window_local(lat_deg, lon_deg)
-        # krok radialny siatki geometrycznej i szerokość komórki w azymucie [km]
-        edges = np.concatenate([[0.0], np.sqrt(radii_km[1:] * radii_km[:-1]), [radii_km[-1]]])
-        cell_km = np.maximum(np.diff(edges), radii_km * daz_rad)[:, None]
-        rows_per_km = sub * terrain.H / (np.pi * nl.R_MOON)
-        cols_per_km = sub * terrain.W / (2.0 * np.pi * nl.R_MOON * np.maximum(np.cos(np.radians(lat_deg)), 1e-3))
-        hr = np.maximum(0.5, 0.5 * cell_km * rows_per_km)
-        hc = np.maximum(0.5, 0.5 * cell_km * cols_per_km)
-        nr, nc = w["nrows"], w["ncols"]
-        r0 = np.clip(np.floor(fr - hr), 0, nr - 1).astype(np.int64)
-        r1 = np.clip(np.ceil(fr + hr), 1, nr).astype(np.int64)
-        c0 = np.clip(np.floor(fc - hc), 0, nc - 1).astype(np.int64)
-        c1 = np.clip(np.ceil(fc + hc), 1, nc).astype(np.int64)
-        r1 = np.maximum(r1, r0 + 1)
-        c1 = np.maximum(c1, c0 + 1)
-        flat = terrain._rect_mean(w["sat_a"], r0.ravel(), c0.ravel(), r1.ravel(), c1.ravel())
-        return flat.reshape(lat_deg.shape + (3,))
+    # --- endpointy -----------------------------------------------------------------------
+
+    def catalog(self) -> SurfaceCatalog:
+        base = self._terrain()
+        cls = self.geo.LunarTerrain3D
+
+        def tiles(layer, w, h, tw, th, dtype, ch):
+            return TileSetInfo(width=w, height=h, tile_w=tw, tile_h=th, nx=w // tw, ny=h // th,
+                               dtype=dtype, channels=ch, url_template=TILE_URL.format(layer=layer))
+
+        return SurfaceCatalog(
+            meta=self._meta("catalog"),
+            r_moon_km=self.geo.R_MOON,
+            dem_source=DEM_SOURCE,
+            dem=tiles("dem", base.W, base.H, DEM_TILE, DEM_TILE, "float32", 1),
+            albedo=tiles("albedo", base.AW, base.AH, ALBEDO_TILE, ALBEDO_TILE,
+                         "uint8" if base.albedo_is_u8 else "float32", 3),
+            albedo_is_u8=bool(base.albedo_is_u8),
+            albedo_scale=1.0 if base.albedo_is_u8 else 0.40,   # geografia.py:1648-1654
+            patch_n=cls.PATCH_N, tau_px=cls.TAU_PX, max_patches=cls.MAX_PATCHES,
+            min_cell_scale=cls.MIN_CELL_SCALE,
+        )
+
+    def observer(self, q: ObserverGeometryQuery) -> ObserverGeometry:
+        t = self._observe(q.lat_deg, q.lon_deg, q.eye_height_m)
+        n = len(t.az_grid)
+        return ObserverGeometry(
+            meta=self._meta("observer"),
+            observer=SelenoPoint(lat_deg=q.lat_deg, lon_deg=q.lon_deg),
+            eye_height_m=q.eye_height_m,
+            observer_elevation_km=float(t.obs_elev_km),
+            observer_radius_km=float(t.obs_radius_km),
+            r_max_km=float(t.r_max_km),
+            slope_deg=float(t.obs_slope_deg),
+            slope_dir=t.obs_slope_dir,
+            horizon=HorizonProfile(
+                az_deg=np.degrees(t.az_grid[:n]).tolist(),
+                alt_deg=np.degrees(t.horizon_alt[:n]).tolist(),
+                distance_km=np.asarray(t.horizon_dist_km[:n], dtype=float).tolist(),
+                lat_deg=np.asarray(t.horizon_lat[:n], dtype=float).tolist(),
+                lon_deg=np.asarray(t.horizon_lon[:n], dtype=float).tolist(),
+                elevation_km=np.asarray(t.horizon_elev_km[:n], dtype=float).tolist(),
+            ),
+        )
+
+    def tile_bytes(self, layer: str, ty: int, tx: int) -> bytes:
+        """Surowe bajty kafla: ``dem`` float32 LE (180×180), ``albedo`` uint8 RGB (256×256×3)."""
+        base = self._terrain()
+        if layer == "dem":
+            arr, tile, dtype = base.dem, DEM_TILE, "<f4"
+        elif layer == "albedo":
+            arr, tile, dtype = base.albedo_map, ALBEDO_TILE, None
+        else:
+            raise HTTPException(404, f"Nieznana warstwa kafli: {layer}")
+        ny, nx = arr.shape[0] // tile, arr.shape[1] // tile
+        if not (0 <= ty < ny and 0 <= tx < nx):
+            raise HTTPException(404, f"Kafel {ty}/{tx} poza zakresem {ny}×{nx}")
+        block = arr[ty * tile:(ty + 1) * tile, tx * tile:(tx + 1) * tile]
+        if dtype is None:   # albedo: uint8 RGB (albedo_is_u8); inaczej skala jak w _init_gpu
+            if base.albedo_is_u8:
+                block = np.ascontiguousarray(block, dtype=np.uint8)
+            else:
+                block = np.ascontiguousarray(np.clip(block / 0.40 * 255.0, 0.0, 255.0), dtype=np.uint8)
+        else:
+            block = np.ascontiguousarray(block, dtype=dtype)
+        return block.tobytes()
 
     # --- endpointy -----------------------------------------------------------------------
 
     def sky(self, q: SurfaceQuery) -> LunarSky:
-        nl = self.nl
+        nl = self.geo
         year, idx = time_index(q.t)
         year_data = load_year(self.ctx.settings.coords_dir, year, nl.J2000)
         idx = min(idx, len(year_data["times"]) - 1)
 
-        key = (q.lat_deg, q.lon_deg, q.eye_height_m)
-        with self._observers_lock:
-            obs = self._observers.get(key)
-        if obs is None:
-            with self._terrain_locked() as terrain:
-                obs = self._observe(terrain, q.lat_deg, q.lon_deg, q.eye_height_m)
-        data = nl.get_topocentric_vectors(year_data, idx, q.lat_deg, q.lon_deg, obs_radius_km=obs["obs_radius_km"])
+        t = self._observe(q.lat_deg, q.lon_deg, q.eye_height_m)
+        data = nl.get_topocentric_vectors(year_data, idx, q.lat_deg, q.lon_deg, obs_radius_km=t.obs_radius_km)
         earth_alt, earth_az, earth_dist = data["earth"]
         sun_alt, sun_az, sun_dist = data["sun"]
 
-        def horizon_at(az_rad: float) -> float:   # LunarTerrain3D.get_horizon_at_azimuth
-            return float(np.interp(az_rad % (2.0 * np.pi), obs["az_grid"], obs["horizon_alt"]))
+        earth_hor = t.get_horizon_at_azimuth(earth_az)
+        sun_hor = t.get_horizon_at_azimuth(sun_az)
+        obs_elev_km = t.obs_elev_km
+        obs_radius_km = t.obs_radius_km
 
-        earth_hor = horizon_at(earth_az)
-        sun_hor = horizon_at(sun_az)
-        obs_elev_km = obs["obs_elev_km"]
-        obs_radius_km = obs["obs_radius_km"]
-
-        # --- newlunar.py:1965-1992 ---
+        # --- geografia.py:2802-2834 ---
         ang_earth = math.asin(min(1.0, nl.R_EARTH / earth_dist))
         ang_sun = math.asin(min(1.0, nl.R_SUN / sun_dist))
         dir_earth_enu = np.array([
@@ -198,19 +222,19 @@ class LunarSurfaceFacade(BaseFacade):
         eclipse_red_glow = sun_horizon_vis * sun_eclipse_occ
         dark_side_exposure = 0.85 + 0.35 * (1.0 - sun_effective_vis)
 
-        # --- statusy HUD, newlunar.py:2081-2091 ---
+        # --- statusy HUD, geografia.py:2951-2965 ---
         earth_visible = earth_alt + ang_earth > earth_hor
-        earth_vis = "WIDOCZNA" if earth_visible else "POD HORYZONTEM"
+        earth_vis = "VISIBLE" if earth_visible else "BELOW HORIZON"
         if sun_horizon_vis <= 0.0:
-            sun_vis = "POD HORYZONTEM"
+            sun_vis = "BELOW HORIZON"
         elif sun_eclipse_occ >= 0.995:
-            sun_vis = "ZAĆMIENIE PRZEZ ZIEMIĘ 100%"
+            sun_vis = "ECLIPSED BY EARTH 100%"
         elif sun_eclipse_occ > 0.01:
-            sun_vis = f"ZAĆMIENIE {sun_eclipse_occ * 100:.0f}%"
+            sun_vis = f"ECLIPSED {sun_eclipse_occ * 100:.0f}%"
         elif sun_horizon_vis < 0.995:
-            sun_vis = f"NA HORYZONCIE ({sun_horizon_vis * 100:.0f}%)"
+            sun_vis = f"ON HORIZON ({sun_horizon_vis * 100:.0f}%)"
         else:
-            sun_vis = "WIDOCZNE"
+            sun_vis = "VISIBLE"
 
         north, east, up = data["obs_bases"]
         ecl_to_enu = np.stack([north, east, up]) @ data["R_body"]
@@ -244,7 +268,7 @@ class LunarSurfaceFacade(BaseFacade):
         )
 
     def stars(self) -> StarField:
-        """Gwiazdy dokładnie jak w ``newlunar.main()`` (``newlunar.py:1774-1785``).
+        """Gwiazdy dokładnie jak w ``geografia.main()`` (``geografia.py:2602-2612``).
 
         ``np.random.seed(42)`` + kolejne wywołania globalnego generatora to ta sama sekwencja co
         ``RandomState(42)`` — bez ruszania globalnego stanu numpy w procesie serwera.
@@ -263,60 +287,14 @@ class LunarSurfaceFacade(BaseFacade):
         meta.frame = ReferenceFrame.ECLIPTIC_J2000_GEOCENTRIC
         return StarField(meta=meta, ecliptic_xyz=[_vec(v) for v in stars_ecl], brightness=star_mags.tolist())
 
-    def terrain(self, q: TerrainQuery) -> LunarTerrainPatch:
-        with self._terrain_locked() as terrain:
-            self._observe(terrain, q.lat_deg, q.lon_deg, q.eye_height_m)
 
-            # Siatka biegunowa — te same próbki co profil horyzontu w update_observer
-            # (newlunar.py:768-778): 480 promieni geometrycznie od 15 m do r_max × 720 azymutów.
-            up0, north0, east0 = terrain.up0, terrain.north0, terrain.east0
-            hor_radii_km = np.geomspace(0.015, terrain.r_max_km, terrain.N_HOR_RAYS)
-            az = terrain.az_grid[:-1]
-            delta_h = (hor_radii_km / self.nl.R_MOON)[:, None]
-            az_h = az[None, :]
-            u_hor = (
-                np.cos(delta_h)[..., None] * up0[None, None, :]
-                + (np.sin(delta_h) * np.cos(az_h))[..., None] * north0[None, None, :]
-                + (np.sin(delta_h) * np.sin(az_h))[..., None] * east0[None, None, :]
-            )
-            h_lat = np.degrees(np.arcsin(np.clip(u_hor[..., 2], -1.0, 1.0)))
-            h_lon = np.degrees(np.arctan2(u_hor[..., 1], u_hor[..., 0]))
-            h_elev = terrain.sample_window_mesh(h_lat, h_lon)
+def tile_routes(facade: LunarSurfaceFacade) -> APIRouter:
+    """Trasa binarna kafli: ``GET /api/v1/lunar_surface/tiles/{layer}/{ty}/{tx}``."""
+    router = APIRouter()
 
-            # Albedo jak w newlunar.draw_3d: średnia albedo (LUT nałożony per piksel 8K) po powierzchni
-            # komórki, z SAT okna ``win["sat_a"]`` przez ``LunarTerrain3D._rect_mean``. Komórką jest
-            # kwadrat o boku max(krok radialny, r·krok azymutu) wokół próbki siatki biegunowej.
-            albedo = self._cell_albedo(terrain, h_lat, h_lon, hor_radii_km, 2.0 * np.pi / terrain.n_az)
-            albedo_u8 = np.clip(np.rint(albedo / ALBEDO_SCALE * 255.0), 0, 255).astype(np.uint8)
+    @router.get("/tiles/{layer}/{ty}/{tx}", summary="Kafel DEM (float32) lub albedo (uint8 RGB)")
+    def tile(layer: str, ty: int, tx: int) -> Response:
+        return Response(content=facade.tile_bytes(layer, ty, tx), media_type="application/octet-stream",
+                        headers={"Cache-Control": TILE_CACHE_CONTROL})
 
-            n_az = terrain.n_az
-            horizon = HorizonProfile(
-                az_deg=np.degrees(terrain.az_grid[:n_az]).tolist(),
-                alt_deg=np.degrees(terrain.horizon_alt[:n_az]).tolist(),
-                distance_km=np.asarray(terrain.horizon_dist_km[:n_az], dtype=float).tolist(),
-                lat_deg=np.asarray(terrain.horizon_lat[:n_az], dtype=float).tolist(),
-                lon_deg=np.asarray(terrain.horizon_lon[:n_az], dtype=float).tolist(),
-                elevation_km=np.asarray(terrain.horizon_elev_km[:n_az], dtype=float).tolist(),
-            )
-            out = dict(
-                observer_elevation_m=terrain.obs_elev_km * 1000.0,
-                observer_radius_km=terrain.obs_radius_km,
-                r_max_km=terrain.r_max_km,
-                window_sub=int(terrain.win.get("sub", 1)) if terrain.win else 1,
-            )
-
-        return LunarTerrainPatch(
-            meta=self._meta("terrain"),
-            observer=SelenoPoint(lat_deg=q.lat_deg, lon_deg=q.lon_deg),
-            eye_height_m=q.eye_height_m,
-            dem_source=DEM_SOURCE,
-            n_az=int(n_az),
-            n_r=int(len(hor_radii_km)),
-            az_step_deg=360.0 / n_az,
-            radii_km=hor_radii_km.tolist(),
-            height_km_f32_b64=_b64(h_elev, "<f4"),
-            albedo_rgb_u8_b64=_b64(albedo_u8, "u1"),
-            albedo_scale=ALBEDO_SCALE,
-            horizon=horizon,
-            **out,
-        )
+    return router

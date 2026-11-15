@@ -1,0 +1,44 @@
+{
+  "meta": {
+    "feature": "lunar_surface",
+    "endpoint": "catalog",
+    "contract_version": "0.1.0",
+    "source": "example",
+    "frame": "TOPOCENTRIC_HORIZON",
+    "units": {
+      "angle": "deg",
+      "distance": "km",
+      "elevation": "m"
+    }
+  },
+  "r_moon_km": 1737.4,
+  "dem_source": "NASA LOLA 16 px/deg",
+  "dem": {
+    "width": 5760,
+    "height": 2880,
+    "tile_w": 180,
+    "tile_h": 180,
+    "nx": 32,
+    "ny": 16,
+    "dtype": "float32",
+    "channels": 1,
+    "url_template": "/api/v1/lunar_surface/tiles/dem/{ty}/{tx}"
+  },
+  "albedo": {
+    "width": 8192,
+    "height": 4096,
+    "tile_w": 256,
+    "tile_h": 256,
+    "nx": 32,
+    "ny": 16,
+    "dtype": "uint8",
+    "channels": 3,
+    "url_template": "/api/v1/lunar_surface/tiles/albedo/{ty}/{tx}"
+  },
+  "albedo_is_u8": true,
+  "albedo_scale": 1.0,
+  "patch_n": 64,
+  "tau_px": 1.5,
+  "max_patches": 1024,
+  "min_cell_scale": 0.005
+}
