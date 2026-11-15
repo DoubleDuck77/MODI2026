@@ -446,15 +446,16 @@
     }
 
     .time-and-dates-table thead th {
-      padding: 7px 16px;
+      padding: 7px 14px;
       background-color: rgba(3, 4, 6, 0.75);
       border-bottom: 1px solid rgba(255, 255, 255, 0.16);
       font-size: 0.72rem;
       font-weight: 600;
-      letter-spacing: 0.16em;
+      letter-spacing: 0.1em;
       text-transform: uppercase;
       color: #94a3b8;
       text-align: center;
+      line-height: 1.4;
     }
 
     .time-and-dates-table thead th + th,
@@ -504,7 +505,7 @@
       align-items: center;
       justify-content: center;
       flex-wrap: wrap;
-      gap: clamp(8px, 1.2vw, 16px);
+      gap: clamp(8px, 1.1vw, 14px);
     }
 
     .timezone-label,
@@ -513,13 +514,17 @@
       white-space: nowrap;
     }
 
-    .utc-group {
+    .utc-group,
+    .country-group,
+    .region-group {
       display: inline-flex;
       align-items: center;
       gap: 6px;
     }
 
-    .utc-group label {
+    .utc-group label,
+    .country-group label,
+    .region-group label {
       font-size: clamp(0.88rem, 1.05vw, 1.02rem);
       white-space: nowrap;
     }
@@ -553,7 +558,7 @@
     }
 
     .tz-select {
-      min-width: clamp(135px, 12vw, 195px);
+      min-width: clamp(135px, 11vw, 195px);
       max-width: min(240px, 85vw);
       padding: 6px 10px;
       background-color: #030406;
@@ -1148,7 +1153,7 @@
 
       <div class="options-bar">
         <div class="options-left hud-brackets">
-          <span class="sky-group-title">Celestial body positions:</span>
+          <span class="sky-group-title">Celestial body position:</span>
 
           <label class="checkbox-label">
             <input type="checkbox" id="chk-earth-alt" name="metric" value="earth_alt" />
@@ -1185,10 +1190,14 @@
     </div>
 
     <table class="time-and-dates-table hud-brackets" aria-label="Time zone and date range">
+      <colgroup>
+        <col style="width: 47%;" />
+        <col style="width: 53%;" />
+      </colgroup>
       <thead>
         <tr>
           <th scope="col">Time zone</th>
-          <th scope="col">Simulation date range (01.01.2000 00:00 – 01.01.2100 00:00)</th>
+          <th scope="col" id="date-range-header">Simulation date range (in selected time zone) (01.01.2000 00:00 UTC+0 – 01.01.2100 00:00 UTC+0)</th>
         </tr>
       </thead>
       <tbody>
@@ -1212,13 +1221,19 @@
                 <span class="timezone-or">or</span>
 
                 <div class="tz-selects">
-                  <select id="country-select" name="country" class="tz-select" aria-label="Select country">
-                    <option value="">country</option>
-                  </select>
+                  <div class="country-group">
+                    <label for="country-select">select a country:</label>
+                    <select id="country-select" name="country" class="tz-select" aria-label="Select country">
+                      <option value="">country</option>
+                    </select>
+                  </div>
 
-                  <select id="state-select" name="state" class="tz-select hidden" aria-label="Select region">
-                    <option value="">region</option>
-                  </select>
+                  <div id="state-group" class="region-group hidden">
+                    <label for="state-select">select a region:</label>
+                    <select id="state-select" name="state" class="tz-select" aria-label="Select region">
+                      <option value="">region</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
@@ -1450,13 +1465,11 @@
 
     const METRYKI_PANELI = new Set(["panel_parallel", "panel_perpendicular", "panel_tracking"]);
 
-    // --- Dopuszczalny zakres danych: od 1 stycznia 2000 00:00 do 1 stycznia 2100 00:00 ---
-    const MIN_DATA_STR = "2000-01-01T00:00";
-    const MAX_DATA_STR = "2100-01-01T00:00";
-    const MIN_DATA_MS = new Date(2000, 0, 1, 0, 0, 0, 0).getTime();
-    const MAX_DATA_MS = new Date(2100, 0, 1, 0, 0, 0, 0).getTime();
-    const KOMUNIKAT_POZA_ZAKRESEM_DAT =
-      "You went outside the allowed date range (01.01.2000 00:00 – 01.01.2100 00:00).";
+    // --- Dopuszczalny zakres danych w UTC+0: od 01.01.2000 00:00 UTC+0 do 01.01.2100 00:00 UTC+0 ---
+    const ABS_MIN_UTC_MS = Date.UTC(2000, 0, 1, 0, 0, 0, 0);
+    const ABS_MAX_UTC_MS = Date.UTC(2100, 0, 1, 0, 0, 0, 0);
+    const BAZOWY_TYTUL_ZAKRESU_DAT =
+      "Simulation date range (in selected time zone) (01.01.2000 00:00 UTC+0 – 01.01.2100 00:00 UTC+0)";
 
     function normalizujKomunikatBleduSerwera(rawMsg) {
       return String(rawMsg || "");
@@ -1479,6 +1492,103 @@
       return Date.parse(str.trim().replace(" ", "T"));
     }
 
+    function formatujUtcMsZOffsetemMinut(utcMs, offsetMin) {
+      const d = new Date(utcMs + offsetMin * 60_000);
+      const yyyy = String(d.getUTCFullYear()).padStart(4, "0");
+      const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+      const dd = String(d.getUTCDate()).padStart(2, "0");
+      const hh = String(d.getUTCHours()).padStart(2, "0");
+      const min = String(d.getUTCMinutes()).padStart(2, "0");
+      return {
+        iso: `${yyyy}-${mm}-${dd}T${hh}:${min}`,
+        display: `${dd}.${mm}.${yyyy} ${hh}:${min}`,
+      };
+    }
+
+    function formatujUtcMsWStrefieIana(utcMs, ianaZone) {
+      try {
+        const dtf = new Intl.DateTimeFormat("en-CA", {
+          timeZone: ianaZone,
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          hourCycle: "h23",
+        });
+        const parts = Object.fromEntries(dtf.formatToParts(new Date(utcMs)).map((p) => [p.type, p.value]));
+        const hh = parts.hour === "24" ? "00" : parts.hour;
+        return {
+          iso: `${parts.year}-${parts.month}-${parts.day}T${hh}:${parts.minute}`,
+          display: `${parts.day}.${parts.month}.${parts.year} ${hh}:${parts.minute}`,
+        };
+      } catch {
+        return formatujUtcMsZOffsetemMinut(utcMs, 0);
+      }
+    }
+
+    function pobierzAktywnyZakresDatWStrefie() {
+      const rawUtc = utcOffsetInput ? utcOffsetInput.value.trim() : "";
+      if (rawUtc) {
+        const norm = normalizujOffsetUtc(rawUtc);
+        if (norm && !norm.blad && typeof norm.offsetMin === "number") {
+          const minObj = formatujUtcMsZOffsetemMinut(ABS_MIN_UTC_MS, norm.offsetMin);
+          const maxObj = formatujUtcMsZOffsetemMinut(ABS_MAX_UTC_MS, norm.offsetMin);
+          return {
+            minStr: minObj.iso,
+            maxStr: maxObj.iso,
+            minMs: parsujDateDoMs(minObj.iso),
+            maxMs: parsujDateDoMs(maxObj.iso),
+            minDisplay: `${minObj.display} ${norm.wartosc}`,
+            maxDisplay: `${maxObj.display} ${norm.wartosc}`,
+            czyPrzeliczony: norm.offsetMin !== 0,
+          };
+        }
+      }
+
+      const kraj = countrySelect ? countrySelect.value : "";
+      const stan = stateSelect ? stateSelect.value : "";
+      if (kraj && krajeIStrefyIana[kraj]) {
+        const ianaZone =
+          krajeIStrefyIana[kraj] === "MULTIPLE"
+            ? (regionyIStrefyIana[kraj] || {})[stan]
+            : krajeIStrefyIana[kraj];
+
+        if (ianaZone) {
+          const minObj = formatujUtcMsWStrefieIana(ABS_MIN_UTC_MS, ianaZone);
+          const maxObj = formatujUtcMsWStrefieIana(ABS_MAX_UTC_MS, ianaZone);
+          return {
+            minStr: minObj.iso,
+            maxStr: maxObj.iso,
+            minMs: parsujDateDoMs(minObj.iso),
+            maxMs: parsujDateDoMs(maxObj.iso),
+            minDisplay: minObj.display,
+            maxDisplay: maxObj.display,
+            czyPrzeliczony: minObj.iso !== "2000-01-01T00:00" || maxObj.iso !== "2100-01-01T00:00",
+          };
+        }
+      }
+
+      const minDef = formatujUtcMsZOffsetemMinut(ABS_MIN_UTC_MS, 0);
+      const maxDef = formatujUtcMsZOffsetemMinut(ABS_MAX_UTC_MS, 0);
+      return {
+        minStr: minDef.iso,
+        maxStr: maxDef.iso,
+        minMs: parsujDateDoMs(minDef.iso),
+        maxMs: parsujDateDoMs(maxDef.iso),
+        minDisplay: `${minDef.display} UTC+0`,
+        maxDisplay: `${maxDef.display} UTC+0`,
+        czyPrzeliczony: false,
+      };
+    }
+
+    function komunikatPozaZakresemDat(zakres) {
+      const lokalnyDopisek = zakres.czyPrzeliczony
+        ? ` (${zakres.minDisplay} – ${zakres.maxDisplay} in selected time zone)`
+        : "";
+      return `You went outside the allowed date range (01.01.2000 00:00 UTC+0 – 01.01.2100 00:00 UTC+0)${lokalnyDopisek}.`;
+    }
+
     function ocenaGranicDatyInput(inputEl) {
       if (!inputEl) return { status: "ok" };
       const val = inputEl.value;
@@ -1487,16 +1597,17 @@
         return { status: "pusta" };
       }
 
+      const zakres = pobierzAktywnyZakresDatWStrefie();
       const ms = parsujDateDoMs(val);
       if (Number.isFinite(ms)) {
-        if (ms < MIN_DATA_MS) return { status: "za_wczesnie" };
-        if (ms > MAX_DATA_MS) return { status: "za_pozno" };
-        return { status: "ok" };
+        if (ms < zakres.minMs) return { status: "za_wczesnie", zakres };
+        if (ms > zakres.maxMs) return { status: "za_pozno", zakres };
+        return { status: "ok", zakres };
       }
 
-      if (val < MIN_DATA_STR) return { status: "za_wczesnie" };
-      if (val > MAX_DATA_STR) return { status: "za_pozno" };
-      return { status: "ok" };
+      if (val < zakres.minStr) return { status: "za_wczesnie", zakres };
+      if (val > zakres.maxStr) return { status: "za_pozno", zakres };
+      return { status: "ok", zakres };
     }
 
     // --- Stan liczby wykresów (1 lub 2) ---
@@ -1714,8 +1825,10 @@
 
     const utcOffsetInput = document.getElementById("utc-offset");
     const countrySelect = document.getElementById("country-select");
+    const stateGroup = document.getElementById("state-group");
     const stateSelect = document.getElementById("state-select");
     const tzStatus = document.getElementById("tz-status");
+    const dateRangeHeader = document.getElementById("date-range-header");
 
     function normalizujOffsetUtc(rawVal) {
       let s = rawVal.trim().replace(/^UTC/i, "").replace(".", ":").trim();
@@ -1737,8 +1850,10 @@
           blad: "Invalid time zone: UTC offset must be between -14:00 and +14:00.",
         };
       }
+      const calkowiteMinuty = (znak === "-" ? -1 : 1) * (godz * 60 + min);
       return {
         wartosc: min > 0 ? `UTC${znak}${godz}:${String(min).padStart(2, "0")}` : `UTC${znak}${godz}`,
+        offsetMin: calkowiteMinuty,
       };
     }
 
@@ -1824,9 +1939,9 @@
           option.textContent = region;
           stateSelect.appendChild(option);
         });
-        stateSelect.classList.remove("hidden");
+        stateGroup.classList.remove("hidden");
       } else {
-        stateSelect.classList.add("hidden");
+        stateGroup.classList.add("hidden");
       }
     }
 
@@ -1834,7 +1949,7 @@
       countrySelect.value = "";
       stateSelect.value = "";
       stateSelect.innerHTML = '<option value="">region</option>';
-      stateSelect.classList.add("hidden");
+      stateGroup.classList.add("hidden");
       countrySelect.classList.remove("input-error");
       stateSelect.classList.remove("input-error");
     }
@@ -1844,10 +1959,32 @@
       utcOffsetInput.classList.remove("input-error");
     }
 
+    function zaktualizujGraniceCzasoweDlaStrefy() {
+      const zakres = pobierzAktywnyZakresDatWStrefie();
+
+      dateStartInput.min = zakres.minStr;
+      dateStartInput.max = zakres.maxStr;
+      dateEndInput.min = zakres.minStr;
+      dateEndInput.max = zakres.maxStr;
+
+      if (dateRangeHeader) {
+        dateRangeHeader.textContent = zakres.czyPrzeliczony
+          ? `${BAZOWY_TYTUL_ZAKRESU_DAT} [${zakres.minDisplay} – ${zakres.maxDisplay}]`
+          : BAZOWY_TYTUL_ZAKRESU_DAT;
+      }
+
+      sprawdzZakresDat(false);
+      aktualizujOgraniczeniaInterwalu();
+      if (czyWybranoWykresPanelu()) {
+        sprawdzZakresInterwalu();
+      }
+    }
+
     utcOffsetInput.addEventListener("focus", wyczyscKrajIStan);
     utcOffsetInput.addEventListener("input", () => {
       wyczyscKrajIStan();
       sprawdzStrefeCzasowa(false);
+      zaktualizujGraniceCzasoweDlaStrefy();
       zaplanujOdswiezenie();
     });
     utcOffsetInput.addEventListener("blur", () => {
@@ -1861,6 +1998,7 @@
       wyczyscUtc();
       zaktualizujListeStanow();
       sprawdzStrefeCzasowa(false);
+      zaktualizujGraniceCzasoweDlaStrefy();
       sprobujAutomatycznieOdswiezyc();
     });
 
@@ -1868,20 +2006,22 @@
     stateSelect.addEventListener("change", () => {
       wyczyscUtc();
       sprawdzStrefeCzasowa(false);
+      zaktualizujGraniceCzasoweDlaStrefy();
       sprobujAutomatycznieOdswiezyc();
     });
 
-    // --- Zakres dat nad wykresami (01.01.2000 00:00 – 01.01.2100 00:00) ---
+    // --- Zakres dat nad wykresami (01.01.2000 00:00 UTC+0 – 01.01.2100 00:00 UTC+0) ---
     const dateStartInput = document.getElementById("date-start");
     const dateEndInput = document.getElementById("date-end");
     const dateStatus = document.getElementById("date-status");
 
     function aktualizujOgraniczeniaInterwalu() {
+      const zakres = pobierzAktywnyZakresDatWStrefie();
       const startOcena = ocenaGranicDatyInput(dateStartInput);
       const endOcena = ocenaGranicDatyInput(dateEndInput);
 
-      const minLimit = startOcena.status === "ok" ? dateStartInput.value : MIN_DATA_STR;
-      const maxLimit = endOcena.status === "ok" ? dateEndInput.value : MAX_DATA_STR;
+      const minLimit = startOcena.status === "ok" ? dateStartInput.value : zakres.minStr;
+      const maxLimit = endOcena.status === "ok" ? dateEndInput.value : zakres.maxStr;
 
       intervalStartInput.min = minLimit;
       intervalEndInput.min = minLimit;
@@ -1892,6 +2032,7 @@
     function sprawdzZakresDat(wymagajWypelnienia = false) {
       const startVal = dateStartInput.value;
       const endVal = dateEndInput.value;
+      const zakres = pobierzAktywnyZakresDatWStrefie();
 
       dateStartInput.classList.remove("input-error");
       dateEndInput.classList.remove("input-error");
@@ -1902,10 +2043,10 @@
 
       if (ocenaStart.status === "za_wczesnie") {
         dateStartInput.classList.add("input-error");
-        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Start date is too early.`);
+        bledyGranic.push(`${komunikatPozaZakresemDat(zakres)} Start date is too early.`);
       } else if (ocenaStart.status === "za_pozno") {
         dateStartInput.classList.add("input-error");
-        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Start date is too late.`);
+        bledyGranic.push(`${komunikatPozaZakresemDat(zakres)} Start date is too late.`);
       } else if (ocenaStart.status === "niepoprawna") {
         dateStartInput.classList.add("input-error");
         bledyGranic.push("Start date is incomplete or invalid.");
@@ -1913,10 +2054,10 @@
 
       if (ocenaEnd.status === "za_wczesnie") {
         dateEndInput.classList.add("input-error");
-        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} End date is too early.`);
+        bledyGranic.push(`${komunikatPozaZakresemDat(zakres)} End date is too early.`);
       } else if (ocenaEnd.status === "za_pozno") {
         dateEndInput.classList.add("input-error");
-        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} End date is too late.`);
+        bledyGranic.push(`${komunikatPozaZakresemDat(zakres)} End date is too late.`);
       } else if (ocenaEnd.status === "niepoprawna") {
         dateEndInput.classList.add("input-error");
         bledyGranic.push("End date is incomplete or invalid.");
@@ -1942,7 +2083,10 @@
       if (wymagajWypelnienia && (!startVal || !endVal)) {
         if (!startVal) dateStartInput.classList.add("input-error");
         if (!endVal) dateEndInput.classList.add("input-error");
-        dateStatus.textContent = "Select both a start date and an end date (within 01.01.2000 00:00 – 01.01.2100 00:00).";
+        const dopisekZakresu = zakres.czyPrzeliczony
+          ? `${zakres.minDisplay} – ${zakres.maxDisplay}`
+          : "01.01.2000 00:00 UTC+0 – 01.01.2100 00:00 UTC+0";
+        dateStatus.textContent = `Select both a start date and an end date (within ${dopisekZakresu}).`;
         dateStatus.classList.remove("hidden");
         return false;
       }
@@ -2116,6 +2260,7 @@
       const endVal = intervalEndInput.value;
       const chartStart = dateStartInput.value;
       const chartEnd = dateEndInput.value;
+      const zakres = pobierzAktywnyZakresDatWStrefie();
 
       intervalStartInput.classList.remove("input-error");
       intervalEndInput.classList.remove("input-error");
@@ -2126,10 +2271,10 @@
 
       if (ocenaStart.status === "za_wczesnie") {
         intervalStartInput.classList.add("input-error");
-        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Interval start date is too early.`);
+        bledyGranic.push(`${komunikatPozaZakresemDat(zakres)} Interval start date is too early.`);
       } else if (ocenaStart.status === "za_pozno") {
         intervalStartInput.classList.add("input-error");
-        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Interval start date is too late.`);
+        bledyGranic.push(`${komunikatPozaZakresemDat(zakres)} Interval start date is too late.`);
       } else if (ocenaStart.status === "niepoprawna") {
         intervalStartInput.classList.add("input-error");
         bledyGranic.push("Interval start date is incomplete or invalid.");
@@ -2137,10 +2282,10 @@
 
       if (ocenaEnd.status === "za_wczesnie") {
         intervalEndInput.classList.add("input-error");
-        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Interval end date is too early.`);
+        bledyGranic.push(`${komunikatPozaZakresemDat(zakres)} Interval end date is too early.`);
       } else if (ocenaEnd.status === "za_pozno") {
         intervalEndInput.classList.add("input-error");
-        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Interval end date is too late.`);
+        bledyGranic.push(`${komunikatPozaZakresemDat(zakres)} Interval end date is too late.`);
       } else if (ocenaEnd.status === "niepoprawna") {
         intervalEndInput.classList.add("input-error");
         bledyGranic.push("Interval end date is incomplete or invalid.");
@@ -3009,8 +3154,9 @@
         }
 
         if (!wynik.miejsce1 || !Array.isArray(wynik.miejsce1.daty) || wynik.miejsce1.daty.length === 0) {
+          const zakres = pobierzAktywnyZakresDatWStrefie();
           throw new Error(
-            `${KOMUNIKAT_POZA_ZAKRESEM_DAT} For the selected time zone, the specified interval exceeds available data.`
+            `${komunikatPozaZakresemDat(zakres)} For the selected time zone, the specified interval exceeds available data.`
           );
         }
 
@@ -3076,12 +3222,9 @@
 
     document.addEventListener("DOMContentLoaded", () => {
       zaladujStrefyCzasowe();
+      zaktualizujGraniceCzasoweDlaStrefy();
       zaktualizujWidocznoscSekcjiInterwalu();
     });
   </script>
 </body>
-
-
-
-
 </html>
