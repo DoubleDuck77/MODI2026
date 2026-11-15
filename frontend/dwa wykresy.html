@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="pl">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Oblicz położenie ciał niebieskich oraz ilość światła</title>
+  <title>Calculate Celestial Body Positions and Light Intensity</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
@@ -1139,56 +1139,56 @@
 
   <header class="top-panel">
     <div class="title-bar">
-      <a href="sim.html" class="back-btn">← Powrót</a>
-      <h1 class="main-title">Oblicz położenie ciał niebieskich oraz ilość światła</h1>
+      <a href="sim.html" class="back-btn">← Back</a>
+      <h1 class="main-title">Calculate Celestial Body Positions and Light Intensity</h1>
     </div>
 
     <div class="options-section">
-      <p class="options-prompt">Wybierz wykres:</p>
+      <p class="options-prompt">Select chart:</p>
 
       <div class="options-bar">
         <div class="options-left hud-brackets">
-          <span class="sky-group-title">Położenia ciał niebieskich:</span>
+          <span class="sky-group-title">Celestial body positions:</span>
 
           <label class="checkbox-label">
             <input type="checkbox" id="chk-earth-alt" name="metric" value="earth_alt" />
-            <span>wysokość Ziemi nad horyzontem</span>
+            <span>Earth elevation above horizon</span>
           </label>
 
           <label class="checkbox-label">
             <input type="checkbox" id="chk-sun-alt" name="metric" value="sun_alt" />
-            <span>wysokość Słońca nad horyzontem</span>
+            <span>Sun elevation above horizon</span>
           </label>
         </div>
 
         <div class="options-right hud-brackets">
-          <span class="panel-group-title">Natężenia padającego na panel:</span>
+          <span class="panel-group-title">Irradiance incident on panel:</span>
 
           <div class="panel-suboptions">
             <label class="checkbox-label">
               <input type="checkbox" id="chk-panel-parallel" name="metric" value="panel_parallel" />
-              <span>równoległy do powierzchni</span>
+              <span>parallel to surface</span>
             </label>
 
             <label class="checkbox-label">
               <input type="checkbox" id="chk-panel-perpendicular" name="metric" value="panel_perpendicular" />
-              <span>prostopadły do powierzchni</span>
+              <span>perpendicular to surface</span>
             </label>
 
             <label class="checkbox-label">
               <input type="checkbox" id="chk-panel-tracking" name="metric" value="panel_tracking" />
-              <span>podążający za Słońcem</span>
+              <span>sun-tracking</span>
             </label>
           </div>
         </div>
       </div>
     </div>
 
-    <table class="time-and-dates-table hud-brackets" aria-label="Strefa czasowa i zakres dat">
+    <table class="time-and-dates-table hud-brackets" aria-label="Time zone and date range">
       <thead>
         <tr>
-          <th scope="col">Strefa czasowa</th>
-          <th scope="col">Zakres dat symulacji (01.01.2000 00:00 – 01.01.2100 00:00)</th>
+          <th scope="col">Time zone</th>
+          <th scope="col">Simulation date range (01.01.2000 00:00 – 01.01.2100 00:00)</th>
         </tr>
       </thead>
       <tbody>
@@ -1196,7 +1196,7 @@
           <td class="timezone-box">
             <div class="timezone-cell-inner">
               <div class="timezone-bar">
-                <span class="timezone-label">Wybierz strefę czasową:</span>
+                <span class="timezone-label">Select time zone:</span>
 
                 <div class="utc-group">
                   <label for="utc-offset">UTC</label>
@@ -1205,18 +1205,18 @@
                     id="utc-offset"
                     name="utc_offset"
                     placeholder="+1"
-                    aria-label="Przesunięcie względem UTC, np. +9, -5, +11:30"
+                    aria-label="UTC offset, e.g. +9, -5, +11:30"
                   />
                 </div>
 
-                <span class="timezone-or">lub</span>
+                <span class="timezone-or">or</span>
 
                 <div class="tz-selects">
-                  <select id="country-select" name="country" class="tz-select" aria-label="Wybierz kraj">
-                    <option value="">kraj</option>
+                  <select id="country-select" name="country" class="tz-select" aria-label="Select country">
+                    <option value="">country</option>
                   </select>
 
-                  <select id="state-select" name="state" class="tz-select hidden" aria-label="Wybierz region">
+                  <select id="state-select" name="state" class="tz-select hidden" aria-label="Select region">
                     <option value="">region</option>
                   </select>
                 </div>
@@ -1230,7 +1230,7 @@
             <div class="dates-cell-inner">
               <div class="dates-bar">
                 <div class="date-group">
-                  <label for="date-start">Data początkowa:</label>
+                  <label for="date-start">Start date:</label>
                   <input
                     type="datetime-local"
                     id="date-start"
@@ -1242,7 +1242,7 @@
                 </div>
 
                 <div class="date-group">
-                  <label for="date-end">Data końcowa:</label>
+                  <label for="date-end">End date:</label>
                   <input
                     type="datetime-local"
                     id="date-end"
@@ -1262,34 +1262,34 @@
     </table>
 
     <div class="actions-bar">
-      <button type="button" id="generate-btn" class="generate-btn">Generuj wykresy</button>
+      <button type="button" id="generate-btn" class="generate-btn">Generate charts</button>
       <div id="plot-status" class="status-msg hidden"></div>
     </div>
   </header>
 
   <div class="chart-count-bar">
-    <span class="chart-count-label" id="chart-count-label">Liczba wykresów:</span>
+    <span class="chart-count-label" id="chart-count-label">Number of charts:</span>
     <div class="segmented-switch" role="group" aria-labelledby="chart-count-label">
       <button type="button" class="switch-option" id="btn-count-1" data-count="1" aria-pressed="false">
-        1 wykres
+        1 chart
       </button>
       <button type="button" class="switch-option active" id="btn-count-2" data-count="2" aria-pressed="true">
-        2 wykresy
+        2 charts
       </button>
     </div>
   </div>
 
-  <main class="charts-section" id="charts-section" aria-label="Wykresy dla wybranych lokalizacji">
+  <main class="charts-section" id="charts-section" aria-label="Charts for selected locations">
     <article class="chart-card hud-brackets" id="chart-card-1">
       <section class="place-section">
-        <h2 class="place-title" id="place-title-1">Współrzędne pierwszego miejsca</h2>
+        <h2 class="place-title" id="place-title-1">Coordinates of first location</h2>
         <div class="coords-row">
           <div class="field-group">
-            <label for="lat1">szerokość:</label>
+            <label for="lat1">latitude:</label>
             <input id="lat1" name="lat1" type="number" step="any" min="-90" max="90" />
           </div>
           <div class="field-group">
-            <label for="lon1">długość:</label>
+            <label for="lon1">longitude:</label>
             <input id="lon1" name="lon1" type="number" step="any" min="-180" max="180" />
           </div>
         </div>
@@ -1297,14 +1297,14 @@
       </section>
 
       <div class="chart-header">
-        <h3 class="chart-title" id="chart-title-1">Pierwsze miejsce — wykres</h3>
-        <p class="chart-subtitle" id="chart-subtitle-1">Uzupełnij współrzędne oraz parametry powyżej, aby wygenerować wykres.</p>
+        <h3 class="chart-title" id="chart-title-1">First location — chart</h3>
+        <p class="chart-subtitle" id="chart-subtitle-1">Fill in the coordinates and parameters above to generate the chart.</p>
       </div>
       <div class="chart-legend" id="chart-legend-1"></div>
       <div class="canvas-wrapper">
         <canvas id="chart-canvas-1"></canvas>
         <div class="chart-placeholder" id="chart-placeholder-1">
-          Brak danych wykresu dla pierwszego miejsca
+          No chart data for the first location
         </div>
         <div class="chart-loading-overlay hidden" id="chart-loading-1" aria-hidden="true">
           <div class="astro-system">
@@ -1320,7 +1320,7 @@
               </div>
             </div>
           </div>
-          <span class="chart-loading-text">Obliczanie pozycji i nasłonecznienia...</span>
+          <span class="chart-loading-text">Calculating positions and solar irradiance...</span>
         </div>
         <div class="chart-tooltip hidden" id="chart-tooltip-1"></div>
       </div>
@@ -1329,14 +1329,14 @@
 
     <article class="chart-card hud-brackets" id="chart-card-2">
       <section class="place-section">
-        <h2 class="place-title" id="place-title-2">Współrzędne drugiego miejsca</h2>
+        <h2 class="place-title" id="place-title-2">Coordinates of second location</h2>
         <div class="coords-row">
           <div class="field-group">
-            <label for="lat2">szerokość:</label>
+            <label for="lat2">latitude:</label>
             <input id="lat2" name="lat2" type="number" step="any" min="-90" max="90" />
           </div>
           <div class="field-group">
-            <label for="lon2">długość:</label>
+            <label for="lon2">longitude:</label>
             <input id="lon2" name="lon2" type="number" step="any" min="-180" max="180" />
           </div>
         </div>
@@ -1344,14 +1344,14 @@
       </section>
 
       <div class="chart-header">
-        <h3 class="chart-title" id="chart-title-2">Drugie miejsce — wykres</h3>
-        <p class="chart-subtitle" id="chart-subtitle-2">Uzupełnij współrzędne oraz parametry powyżej, aby wygenerować wykres.</p>
+        <h3 class="chart-title" id="chart-title-2">Second location — chart</h3>
+        <p class="chart-subtitle" id="chart-subtitle-2">Fill in the coordinates and parameters above to generate the chart.</p>
       </div>
       <div class="chart-legend" id="chart-legend-2"></div>
       <div class="canvas-wrapper">
         <canvas id="chart-canvas-2"></canvas>
         <div class="chart-placeholder" id="chart-placeholder-2">
-          Brak danych wykresu dla drugiego miejsca
+          No chart data for the second location
         </div>
         <div class="chart-loading-overlay hidden" id="chart-loading-2" aria-hidden="true">
           <div class="astro-system">
@@ -1367,7 +1367,7 @@
               </div>
             </div>
           </div>
-          <span class="chart-loading-text">Obliczanie pozycji i nasłonecznienia...</span>
+          <span class="chart-loading-text">Calculating positions and solar irradiance...</span>
         </div>
         <div class="chart-tooltip hidden" id="chart-tooltip-2"></div>
       </div>
@@ -1375,15 +1375,15 @@
     </article>
   </main>
 
-  <section class="interval-energy-section hidden" id="panel-interval-section" aria-label="Energia zebrana w wybranym interwale">
+  <section class="interval-energy-section hidden" id="panel-interval-section" aria-label="Energy collected in selected interval">
     <div class="interval-energy-card hud-brackets">
       <h3 class="interval-energy-title" id="interval-energy-title">
-        Oblicz energię zebraną przez panele w wybranym interwale (dla obu wykresów)
+        Calculate energy collected by panels in the selected interval (for both charts)
       </h3>
 
       <div class="dates-bar">
         <div class="date-group">
-          <label for="interval-start">Data początkowa interwału:</label>
+          <label for="interval-start">Interval start date:</label>
           <input
             type="datetime-local"
             id="interval-start"
@@ -1395,7 +1395,7 @@
         </div>
 
         <div class="date-group">
-          <label for="interval-end">Data końcowa interwału:</label>
+          <label for="interval-end">Interval end date:</label>
           <input
             type="datetime-local"
             id="interval-end"
@@ -1412,14 +1412,14 @@
       <div class="interval-results-grid" id="interval-results-grid">
         <div class="interval-result-box" id="interval-result-box-1">
           <span class="interval-result-place" id="interval-result-place-1">
-            Pierwsze miejsce — energia zebrana w interwale:
+            First location — energy collected in interval:
           </span>
           <span class="interval-result-value" id="interval-energy-1">—</span>
         </div>
 
         <div class="interval-result-box" id="interval-result-box-2">
           <span class="interval-result-place" id="interval-result-place-2">
-            Drugie miejsce — energia zebrana w interwale:
+            Second location — energy collected in interval:
           </span>
           <span class="interval-result-value" id="interval-energy-2">—</span>
         </div>
@@ -1456,18 +1456,10 @@
     const MIN_DATA_MS = new Date(2000, 0, 1, 0, 0, 0, 0).getTime();
     const MAX_DATA_MS = new Date(2100, 0, 1, 0, 0, 0, 0).getTime();
     const KOMUNIKAT_POZA_ZAKRESEM_DAT =
-      "Wyszedłeś poza dozwolony zakres dat (01.01.2000 00:00 – 01.01.2100 00:00).";
+      "You went outside the allowed date range (01.01.2000 00:00 – 01.01.2100 00:00).";
 
     function normalizujKomunikatBleduSerwera(rawMsg) {
-      const msg = String(rawMsg || "");
-      const czyBladZakresuDat =
-        /ephemeris|segment|covers|out of range|zakres|dat[ay]?|poza|wcześniejsz|późniejsz|1999|2000|2050|2053|2100|de4\d+|\.bsp|brak danych|brak pliku|nie znaleziono pliku/i.test(
-          msg
-        );
-      if (czyBladZakresuDat) {
-        return `${KOMUNIKAT_POZA_ZAKRESEM_DAT} Wybierz daty mieszczące się w dozwolonym przedziale.`;
-      }
-      return msg;
+      return String(rawMsg || "");
     }
 
     function parsujDateDoMs(str) {
@@ -1556,22 +1548,22 @@
       intervalResultBox2.classList.toggle("hidden", czyJeden);
 
       if (czyJeden) {
-        placeTitle1.textContent = "Współrzędne miejsca";
-        generateBtn.textContent = "Generuj wykres";
-        intervalEnergyTitle.textContent = "Oblicz energię zebraną przez panel w wybranym interwale";
-        intervalResultPlace1.textContent = "Energia zebrana w wybranym interwale:";
+        placeTitle1.textContent = "Location coordinates";
+        generateBtn.textContent = "Generate chart";
+        intervalEnergyTitle.textContent = "Calculate energy collected by the panel in the selected interval";
+        intervalResultPlace1.textContent = "Energy collected in selected interval:";
         if (!stanWykresow[1]) {
-          document.getElementById("chart-title-1").textContent = "Wykres";
-          document.getElementById("chart-placeholder-1").textContent = "Brak danych wykresu";
+          document.getElementById("chart-title-1").textContent = "Chart";
+          document.getElementById("chart-placeholder-1").textContent = "No chart data";
         }
       } else {
-        placeTitle1.textContent = "Współrzędne pierwszego miejsca";
-        generateBtn.textContent = "Generuj wykresy";
-        intervalEnergyTitle.textContent = "Oblicz energię zebraną przez panele w wybranym interwale (dla obu wykresów)";
-        intervalResultPlace1.textContent = "Pierwsze miejsce — energia zebrana w interwale:";
+        placeTitle1.textContent = "Coordinates of first location";
+        generateBtn.textContent = "Generate charts";
+        intervalEnergyTitle.textContent = "Calculate energy collected by panels in the selected interval (for both charts)";
+        intervalResultPlace1.textContent = "First location — energy collected in interval:";
         if (!stanWykresow[1]) {
-          document.getElementById("chart-title-1").textContent = "Pierwsze miejsce — wykres";
-          document.getElementById("chart-placeholder-1").textContent = "Brak danych wykresu dla pierwszego miejsca";
+          document.getElementById("chart-title-1").textContent = "First location — chart";
+          document.getElementById("chart-placeholder-1").textContent = "No chart data for the first location";
         }
       }
 
@@ -1662,22 +1654,22 @@
         const lat = Number(latRaw);
         if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
           latInput.classList.add("input-error");
-          bledy.push(`Błędna szerokość geograficzna ${nazwaMiejsca} (wymagany zakres: od -90° do 90°).`);
+          bledy.push(`Invalid latitude for ${nazwaMiejsca} (required range: -90° to 90°).`);
         }
       } else if (wymagajWypelnienia || latInput.validity.badInput) {
         latInput.classList.add("input-error");
-        bledy.push(`Podaj poprawną szerokość geograficzną ${nazwaMiejsca} (od -90° do 90°).`);
+        bledy.push(`Enter a valid latitude for ${nazwaMiejsca} (-90° to 90°).`);
       }
 
       if (lonRaw !== "") {
         const lon = Number(lonRaw);
         if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
           lonInput.classList.add("input-error");
-          bledy.push(`Błędna długość geograficzna ${nazwaMiejsca} (wymagany zakres: od -180° do 180°).`);
+          bledy.push(`Invalid longitude for ${nazwaMiejsca} (required range: -180° to 180°).`);
         }
       } else if (wymagajWypelnienia || lonInput.validity.badInput) {
         lonInput.classList.add("input-error");
-        bledy.push(`Podaj poprawną długość geograficzną ${nazwaMiejsca} (od -180° do 180°).`);
+        bledy.push(`Enter a valid longitude for ${nazwaMiejsca} (-180° to 180°).`);
       }
 
       if (bledy.length > 0) {
@@ -1692,13 +1684,13 @@
 
     [lat1Input, lon1Input].forEach((input) => {
       input.addEventListener("input", () => {
-        const nazwa = liczbaWykresow === 1 ? "miejsca" : "pierwszego miejsca";
+        const nazwa = liczbaWykresow === 1 ? "the location" : "the first location";
         sprawdzWspolrzedneMiejsca(lat1Input, lon1Input, coordsStatus1, nazwa, false);
         zaplanujOdswiezenie();
       });
       input.addEventListener("blur", () => {
         if (lat1Input.value.trim() !== "" || lon1Input.value.trim() !== "") {
-          const nazwa = liczbaWykresow === 1 ? "miejsca" : "pierwszego miejsca";
+          const nazwa = liczbaWykresow === 1 ? "the location" : "the first location";
           sprawdzWspolrzedneMiejsca(lat1Input, lon1Input, coordsStatus1, nazwa, true);
         }
       });
@@ -1706,12 +1698,12 @@
 
     [lat2Input, lon2Input].forEach((input) => {
       input.addEventListener("input", () => {
-        sprawdzWspolrzedneMiejsca(lat2Input, lon2Input, coordsStatus2, "drugiego miejsca", false);
+        sprawdzWspolrzedneMiejsca(lat2Input, lon2Input, coordsStatus2, "the second location", false);
         zaplanujOdswiezenie();
       });
       input.addEventListener("blur", () => {
         if (lat2Input.value.trim() !== "" || lon2Input.value.trim() !== "") {
-          sprawdzWspolrzedneMiejsca(lat2Input, lon2Input, coordsStatus2, "drugiego miejsca", true);
+          sprawdzWspolrzedneMiejsca(lat2Input, lon2Input, coordsStatus2, "the second location", true);
         }
       });
     });
@@ -1734,7 +1726,7 @@
       const match = s.match(/^([+-])(\d{1,2})(?::(\d{2}))?$/);
       if (!match) {
         return {
-          blad: "Błędna strefa czasowa. Wpisz przesunięcie UTC w formacie np. +1, -5 lub +11:30 (albo wybierz kraj).",
+          blad: "Invalid time zone. Enter a UTC offset in a format like +1, -5, or +11:30 (or select a country).",
         };
       }
       const znak = match[1];
@@ -1742,7 +1734,7 @@
       const min = match[3] ? parseInt(match[3], 10) : 0;
       if (godz > 14 || (godz === 14 && min > 0) || min > 59) {
         return {
-          blad: "Błędna strefa czasowa: przesunięcie UTC musi mieścić się w zakresie od -14:00 do +14:00.",
+          blad: "Invalid time zone: UTC offset must be between -14:00 and +14:00.",
         };
       }
       return {
@@ -1775,7 +1767,7 @@
         if (krajeIStrefyIana[kraj] === "MULTIPLE" && !stan) {
           if (wymagajWyboru) {
             stateSelect.classList.add("input-error");
-            tzStatus.textContent = `Błędna strefa czasowa: wybierz region dla kraju "${kraj}".`;
+            tzStatus.textContent = `Invalid time zone: select a region for "${kraj}".`;
             tzStatus.classList.remove("hidden");
           } else {
             tzStatus.classList.add("hidden");
@@ -1789,7 +1781,7 @@
       if (wymagajWyboru) {
         utcOffsetInput.classList.add("input-error");
         countrySelect.classList.add("input-error");
-        tzStatus.textContent = "Błędna strefa czasowa: wpisz przesunięcie UTC lub wybierz kraj z listy.";
+        tzStatus.textContent = "Invalid time zone: enter a UTC offset or select a country from the list.";
         tzStatus.classList.remove("hidden");
       } else {
         tzStatus.classList.add("hidden");
@@ -1800,18 +1792,18 @@
     async function zaladujStrefyCzasowe() {
       try {
         const respApi = await fetch("/api/strefy");
-        if (!respApi.ok) throw new Error(`Błąd HTTP ${respApi.status}`);
+        if (!respApi.ok) throw new Error(`HTTP Error ${respApi.status}`);
         const dane = await respApi.json();
         krajeIStrefyIana = dane.kraje;
         regionyIStrefyIana = dane.regiony;
       } catch (err) {
         tzStatus.textContent =
-          "Nie udało się wczytać stref czasowych z /api/strefy. Uruchom 'py -3.12 run_local.py' i otwórz http://127.0.0.1:8000/dwa%20wykresy.html";
+          "Failed to load time zones from /api/strefy. Run 'py -3.12 run_local.py' and open http://127.0.0.1:8000/dwa%20wykresy.html";
         tzStatus.classList.remove("hidden");
         return;
       }
 
-      countrySelect.innerHTML = '<option value="">kraj</option>';
+      countrySelect.innerHTML = '<option value="">country</option>';
       Object.keys(krajeIStrefyIana).forEach((kraj) => {
         const option = document.createElement("option");
         option.value = kraj;
@@ -1910,24 +1902,24 @@
 
       if (ocenaStart.status === "za_wczesnie") {
         dateStartInput.classList.add("input-error");
-        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Data początkowa jest za wczesna.`);
+        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Start date is too early.`);
       } else if (ocenaStart.status === "za_pozno") {
         dateStartInput.classList.add("input-error");
-        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Data początkowa jest za późna.`);
+        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Start date is too late.`);
       } else if (ocenaStart.status === "niepoprawna") {
         dateStartInput.classList.add("input-error");
-        bledyGranic.push("Data początkowa jest niepełna lub niepoprawna.");
+        bledyGranic.push("Start date is incomplete or invalid.");
       }
 
       if (ocenaEnd.status === "za_wczesnie") {
         dateEndInput.classList.add("input-error");
-        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Data końcowa jest za wczesna.`);
+        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} End date is too early.`);
       } else if (ocenaEnd.status === "za_pozno") {
         dateEndInput.classList.add("input-error");
-        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Data końcowa jest za późna.`);
+        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} End date is too late.`);
       } else if (ocenaEnd.status === "niepoprawna") {
         dateEndInput.classList.add("input-error");
-        bledyGranic.push("Data końcowa jest niepełna lub niepoprawna.");
+        bledyGranic.push("End date is incomplete or invalid.");
       }
 
       if (bledyGranic.length > 0) {
@@ -1941,8 +1933,8 @@
         dateEndInput.classList.add("input-error");
         dateStatus.textContent =
           parsujDateDoMs(endVal) === parsujDateDoMs(startVal)
-            ? "Błąd zakresu dat: data początkowa i data końcowa nie mogą być identyczne."
-            : "Błąd zakresu dat: data końcowa nie może być wcześniejsza niż data początkowa.";
+            ? "Date range error: start date and end date cannot be identical."
+            : "Date range error: end date cannot be earlier than start date.";
         dateStatus.classList.remove("hidden");
         return false;
       }
@@ -1950,7 +1942,7 @@
       if (wymagajWypelnienia && (!startVal || !endVal)) {
         if (!startVal) dateStartInput.classList.add("input-error");
         if (!endVal) dateEndInput.classList.add("input-error");
-        dateStatus.textContent = "Wybierz zarówno datę początkową, jak i datę końcową (w zakresie 01.01.2000 00:00 – 01.01.2100 00:00).";
+        dateStatus.textContent = "Select both a start date and an end date (within 01.01.2000 00:00 – 01.01.2100 00:00).";
         dateStatus.classList.remove("hidden");
         return false;
       }
@@ -1996,15 +1988,15 @@
     const plotStatus = document.getElementById("plot-status");
 
     function zbierzParametry(pokazBledy = true) {
-      const nazwa1 = liczbaWykresow === 1 ? "miejsca" : "pierwszego miejsca";
+      const nazwa1 = liczbaWykresow === 1 ? "the location" : "the first location";
       const ok1 = sprawdzWspolrzedneMiejsca(lat1Input, lon1Input, coordsStatus1, nazwa1, pokazBledy);
       const ok2 =
         liczbaWykresow === 2
-          ? sprawdzWspolrzedneMiejsca(lat2Input, lon2Input, coordsStatus2, "drugiego miejsca", pokazBledy)
+          ? sprawdzWspolrzedneMiejsca(lat2Input, lon2Input, coordsStatus2, "the second location", pokazBledy)
           : true;
 
       if (!ok1 || !ok2) {
-        return pokazBledy ? { blad: "Popraw błędne współrzędne geograficzne w sekcji wykresu." } : null;
+        return pokazBledy ? { blad: "Correct the invalid geographic coordinates in the chart section." } : null;
       }
 
       const lat1 = parseFloat(lat1Input.value);
@@ -2025,12 +2017,12 @@
 
       const wybranyCheckbox = Array.from(checkboxes).find((cb) => cb.checked);
       if (!wybranyCheckbox) {
-        return pokazBledy ? { blad: "Zaznacz jeden z 5 typów wykresu." } : null;
+        return pokazBledy ? { blad: "Select one of the 5 chart types." } : null;
       }
 
       const okTz = sprawdzStrefeCzasowa(pokazBledy);
       if (!okTz) {
-        return pokazBledy ? { blad: tzStatus.textContent || "Wybierz poprawną strefę czasową." } : null;
+        return pokazBledy ? { blad: tzStatus.textContent || "Select a valid time zone." } : null;
       }
 
       const rawUtc = utcOffsetInput.value.trim();
@@ -2047,7 +2039,7 @@
 
       const okDaty = sprawdzZakresDat(pokazBledy);
       if (!okDaty) {
-        return pokazBledy ? { blad: dateStatus.textContent || "Popraw zakres dat." } : null;
+        return pokazBledy ? { blad: dateStatus.textContent || "Correct the date range." } : null;
       }
 
       const { data_poczatek, data_koniec } = pobierzZakresDat();
@@ -2091,8 +2083,8 @@
       const jStr =
         jZaokraglone >= 1e7
           ? jZaokraglone.toExponential(3)
-          : jZaokraglone.toLocaleString("pl-PL", { maximumFractionDigits: 0 });
-      const kwhStr = kwh.toLocaleString("pl-PL", {
+          : jZaokraglone.toLocaleString("en-US", { maximumFractionDigits: 0 });
+      const kwhStr = kwh.toLocaleString("en-US", {
         minimumFractionDigits: 3,
         maximumFractionDigits: 3,
       });
@@ -2134,24 +2126,24 @@
 
       if (ocenaStart.status === "za_wczesnie") {
         intervalStartInput.classList.add("input-error");
-        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Data początkowa interwału jest za wczesna.`);
+        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Interval start date is too early.`);
       } else if (ocenaStart.status === "za_pozno") {
         intervalStartInput.classList.add("input-error");
-        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Data początkowa interwału jest za późna.`);
+        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Interval start date is too late.`);
       } else if (ocenaStart.status === "niepoprawna") {
         intervalStartInput.classList.add("input-error");
-        bledyGranic.push("Data początkowa interwału jest niepełna lub niepoprawna.");
+        bledyGranic.push("Interval start date is incomplete or invalid.");
       }
 
       if (ocenaEnd.status === "za_wczesnie") {
         intervalEndInput.classList.add("input-error");
-        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Data końcowa interwału jest za wczesna.`);
+        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Interval end date is too early.`);
       } else if (ocenaEnd.status === "za_pozno") {
         intervalEndInput.classList.add("input-error");
-        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Data końcowa interwału jest za późna.`);
+        bledyGranic.push(`${KOMUNIKAT_POZA_ZAKRESEM_DAT} Interval end date is too late.`);
       } else if (ocenaEnd.status === "niepoprawna") {
         intervalEndInput.classList.add("input-error");
-        bledyGranic.push("Data końcowa interwału jest niepełna lub niepoprawna.");
+        bledyGranic.push("Interval end date is incomplete or invalid.");
       }
 
       if (bledyGranic.length > 0) {
@@ -2175,7 +2167,7 @@
           chartStart && chartEnd
             ? ` (${chartStart.replace("T", " ")} – ${chartEnd.replace("T", " ")})`
             : "";
-        intervalStatus.textContent = `Wyszedłeś poza dozwolony zakres dat wykresu: interwał do obliczenia zebranej energii nie może wykraczać poza zakres${zakresTekst}.`;
+        intervalStatus.textContent = `You went outside the allowed chart date range: the interval for calculating collected energy cannot exceed the range${zakresTekst}.`;
         intervalStatus.classList.remove("hidden", "info");
         intervalEnergy1El.textContent = "—";
         intervalEnergy2El.textContent = "—";
@@ -2187,8 +2179,8 @@
         intervalEndInput.classList.add("input-error");
         intervalStatus.textContent =
           parsujDateDoMs(endVal) === parsujDateDoMs(startVal)
-            ? "Błąd interwału: data początkowa i data końcowa interwału nie mogą być identyczne."
-            : "Błąd interwału: data końcowa nie może być wcześniejsza niż data początkowa.";
+            ? "Interval error: interval start date and end date cannot be identical."
+            : "Interval error: end date cannot be earlier than start date.";
         intervalStatus.classList.remove("hidden", "info");
         intervalEnergy1El.textContent = "—";
         intervalEnergy2El.textContent = "—";
@@ -2212,8 +2204,8 @@
       const endVal = intervalEndInput.value;
 
       if (!startVal || !endVal) {
-        intervalEnergy1El.textContent = "Wybierz początek i koniec interwału";
-        intervalEnergy2El.textContent = "Wybierz początek i koniec interwału";
+        intervalEnergy1El.textContent = "Select interval start and end";
+        intervalEnergy2El.textContent = "Select interval start and end";
         if (stanWykresow[1]) rysujCanvasWykresu(1, null);
         if (liczbaWykresow === 2 && stanWykresow[2]) rysujCanvasWykresu(2, null);
         return;
@@ -2264,8 +2256,8 @@
       if (!baseParams || baseParams.blad) {
         const msgBrak =
           liczbaWykresow === 1
-            ? "Uzupełnij współrzędne, strefę czasową i wygeneruj wykres"
-            : "Uzupełnij współrzędne, strefę czasową i wygeneruj wykresy";
+            ? "Fill in coordinates, time zone, and generate the chart"
+            : "Fill in coordinates, time zone, and generate the charts";
         intervalEnergy1El.textContent = msgBrak;
         intervalEnergy2El.textContent = msgBrak;
         return;
@@ -2276,7 +2268,7 @@
       }
       kontrolerZapytaniaInterwalu = new AbortController();
 
-      intervalStatus.textContent = "Obliczanie zebranej energii dla wybranego interwału...";
+      intervalStatus.textContent = "Calculating collected energy for the selected interval...";
       intervalStatus.classList.remove("hidden");
       intervalStatus.classList.add("info");
 
@@ -2295,7 +2287,7 @@
         });
 
         if (!resp.ok) {
-          let komunikat = `Błąd serwera (${resp.status})`;
+          let komunikat = `Server error (${resp.status})`;
           try {
             const errJson = await resp.json();
             if (errJson.error) komunikat = errJson.error;
@@ -2324,9 +2316,9 @@
       } catch (err) {
         if (err.name === "AbortError") return;
         const msg = normalizujKomunikatBleduSerwera(err.message || err);
-        intervalStatus.textContent = msg.startsWith("Wyszedłeś poza")
+        intervalStatus.textContent = msg.startsWith("You went outside")
           ? msg
-          : `Nie udało się obliczyć energii w interwale: ${msg}`;
+          : `Failed to calculate energy in interval: ${msg}`;
         intervalStatus.classList.remove("hidden", "info");
       }
     }
@@ -2354,7 +2346,7 @@
       if (Math.abs(val) >= 1e6) {
         return val.toExponential(3);
       }
-      return val.toLocaleString("pl-PL", {
+      return val.toLocaleString("en-US", {
         minimumFractionDigits: precyzja,
         maximumFractionDigits: precyzja,
       });
@@ -2363,14 +2355,14 @@
     function budujKonfiguracjeWykresu(metric, daneMiejsca, indeksMiejsca) {
       const nazwaMiejsca =
         liczbaWykresow === 1
-          ? "Wybrane miejsce"
+          ? "Selected location"
           : indeksMiejsca === 1
-            ? "Pierwsze miejsce"
-            : "Drugie miejsce";
+            ? "First location"
+            : "Second location";
       const latTxt = `${daneMiejsca.lat >= 0 ? "+" : ""}${daneMiejsca.lat.toFixed(2)}°`;
       const lonTxt = `${daneMiejsca.lon >= 0 ? "+" : ""}${daneMiejsca.lon.toFixed(2)}°`;
       const podtytul = `${nazwaMiejsca} (Lat: ${latTxt}, Lon: ${lonTxt})`;
-      const osXEtykieta = `Czas (${daneMiejsca.strefa_utc})`;
+      const osXEtykieta = `Time (${daneMiejsca.strefa_utc})`;
 
       if (metric === "earth_alt") {
         const y1 = daneMiejsca.elewacja_ziemi_deg;
@@ -2381,20 +2373,20 @@
         const procWidoczne = y1.length ? (widoczne / y1.length) * 100 : 0;
 
         return {
-          tytul: "Wysokość dolnej części tarczy Ziemi oraz wysokość kątowa gór",
+          tytul: "Elevation of Earth's lower limb and angular height of mountains",
           podtytul,
           osXEtykieta,
-          osYLewaEtykieta: "Wysokość kątowa [°]",
+          osYLewaEtykieta: "Angular elevation [°]",
           osYPrawaEtykieta: null,
           daty: daneMiejsca.daty,
           seria1: {
-            nazwa: "Wysokość dolnej części tarczy Ziemi [°]",
+            nazwa: "Earth lower limb elevation [°]",
             dane: y1,
             kolor: "#3b82f6",
             jednostka: "°",
           },
           seria2: {
-            nazwa: "Wysokość kątowa gór (azymut Ziemi) [°]",
+            nazwa: "Mountain angular height (Earth azimuth) [°]",
             dane: y2,
             kolor: "#94a3b8",
             jednostka: "°",
@@ -2406,9 +2398,9 @@
           liniaZero: true,
           czyPanel: false,
           statystyki: [
-            { label: "Maks. elewacja Ziemi", value: `${maxVal >= 0 ? "+" : ""}${maxVal.toFixed(2)}°` },
-            { label: "Min. elewacja Ziemi", value: `${minVal >= 0 ? "+" : ""}${minVal.toFixed(2)}°` },
-            { label: "Cała tarcza nad górami", value: `${procWidoczne.toFixed(1)}% czasu` },
+            { label: "Max. Earth elevation", value: `${maxVal >= 0 ? "+" : ""}${maxVal.toFixed(2)}°` },
+            { label: "Min. Earth elevation", value: `${minVal >= 0 ? "+" : ""}${minVal.toFixed(2)}°` },
+            { label: "Full disc above mountains", value: `${procWidoczne.toFixed(1)}% of time` },
           ],
         };
       }
@@ -2422,20 +2414,20 @@
         const procWidoczne = y1.length ? (widoczne / y1.length) * 100 : 0;
 
         return {
-          tytul: "Wysokość górnej części tarczy Słońca oraz wysokość kątowa gór",
+          tytul: "Elevation of Sun's upper limb and angular height of mountains",
           podtytul,
           osXEtykieta,
-          osYLewaEtykieta: "Wysokość kątowa [°]",
+          osYLewaEtykieta: "Angular elevation [°]",
           osYPrawaEtykieta: null,
           daty: daneMiejsca.daty,
           seria1: {
-            nazwa: "Wysokość górnej części tarczy Słońca [°]",
+            nazwa: "Sun upper limb elevation [°]",
             dane: y1,
             kolor: "#f59e0b",
             jednostka: "°",
           },
           seria2: {
-            nazwa: "Wysokość kątowa gór (azymut Słońca) [°]",
+            nazwa: "Mountain angular height (Sun azimuth) [°]",
             dane: y2,
             kolor: "#94a3b8",
             jednostka: "°",
@@ -2447,29 +2439,29 @@
           liniaZero: true,
           czyPanel: false,
           statystyki: [
-            { label: "Maks. elewacja Słońca", value: `${maxVal >= 0 ? "+" : ""}${maxVal.toFixed(2)}°` },
-            { label: "Min. elewacja Słońca", value: `${minVal >= 0 ? "+" : ""}${minVal.toFixed(2)}°` },
-            { label: "Tarcza widoczna", value: `${procWidoczne.toFixed(1)}% czasu` },
+            { label: "Max. Sun elevation", value: `${maxVal >= 0 ? "+" : ""}${maxVal.toFixed(2)}°` },
+            { label: "Min. Sun elevation", value: `${minVal >= 0 ? "+" : ""}${minVal.toFixed(2)}°` },
+            { label: "Disc visible", value: `${procWidoczne.toFixed(1)}% of time` },
           ],
         };
       }
 
       const opisyPaneli = {
         panel_parallel: {
-          tytul: "Natężenie promieniowania — panel równoległy do powierzchni",
-          seria1Nazwa: "Natężenie",
+          tytul: "Solar irradiance — panel parallel to surface",
+          seria1Nazwa: "Irradiance",
           kolor1: "#f59e0b",
           wypelnienieKolor: "rgba(253, 224, 71, 0.22)",
         },
         panel_perpendicular: {
-          tytul: "Natężenie promieniowania — panel prostopadły do powierzchni",
-          seria1Nazwa: "Natężenie",
+          tytul: "Solar irradiance — panel perpendicular to surface",
+          seria1Nazwa: "Irradiance",
           kolor1: "#ef4444",
           wypelnienieKolor: "rgba(252, 165, 165, 0.22)",
         },
         panel_tracking: {
-          tytul: "Natężenie promieniowania — panel podążający za Słońcem",
-          seria1Nazwa: "Natężenie",
+          tytul: "Solar irradiance — sun-tracking panel",
+          seria1Nazwa: "Irradiance",
           kolor1: "#a855f7",
           wypelnienieKolor: "rgba(196, 181, 253, 0.24)",
         },
@@ -2486,7 +2478,7 @@
         tytul: meta.tytul,
         podtytul,
         osXEtykieta,
-        osYLewaEtykieta: "Natężenie [W/m²]",
+        osYLewaEtykieta: "Irradiance [W/m²]",
         osYPrawaEtykieta: null,
         daty: daneMiejsca.daty,
         seria1: {
@@ -2503,9 +2495,9 @@
         liniaZero: false,
         czyPanel: true,
         statystyki: [
-          { label: "Maks. natężenie", value: `${maxNat.toFixed(1)} W/m²` },
-          { label: "Średnie natężenie", value: `${srNat.toFixed(1)} W/m²` },
-          { label: "Oświetlenie słoneczne", value: `${procOswietlone.toFixed(1)}% czasu` },
+          { label: "Max. irradiance", value: `${maxNat.toFixed(1)} W/m²` },
+          { label: "Average irradiance", value: `${srNat.toFixed(1)} W/m²` },
+          { label: "Solar illumination", value: `${procOswietlone.toFixed(1)}% of time` },
         ],
       };
     }
@@ -2536,7 +2528,7 @@
           cfg.liniaZero
             ? `<span class="legend-item">
                 <span class="legend-swatch dashed" style="--swatch-color: #38bdf8;"></span>
-                <span>Horyzont matematyczny (0°)</span>
+                <span>Mathematical horizon (0°)</span>
               </span>`
             : ""
         }
@@ -2544,7 +2536,7 @@
           cfg.czyPanel
             ? `<span class="legend-item">
                 <span class="legend-swatch shaded"></span>
-                <span>Zacieniowany obszar — obszar sumowania zliczonej energii</span>
+                <span>Shaded area — integration area of accumulated energy</span>
               </span>`
             : ""
         }
@@ -2989,8 +2981,8 @@
       ustawAnimacjeLadowaniaWykresow(true);
       plotStatus.textContent =
         liczbaWykresow === 1
-          ? "Obliczanie pozycji ciał niebieskich, topografii Księżyca i generowanie wykresu..."
-          : "Obliczanie pozycji ciał niebieskich, topografii Księżyca i generowanie wykresów...";
+          ? "Calculating celestial body positions, lunar topography, and generating chart..."
+          : "Calculating celestial body positions, lunar topography, and generating charts...";
       plotStatus.classList.remove("hidden");
       plotStatus.classList.add("info");
 
@@ -3003,7 +2995,7 @@
         });
 
         if (!resp.ok) {
-          let komunikat = `Błąd serwera (${resp.status})`;
+          let komunikat = `Server error (${resp.status})`;
           try {
             const errJson = await resp.json();
             if (errJson.error) komunikat = errJson.error;
@@ -3018,7 +3010,7 @@
 
         if (!wynik.miejsce1 || !Array.isArray(wynik.miejsce1.daty) || wynik.miejsce1.daty.length === 0) {
           throw new Error(
-            `${KOMUNIKAT_POZA_ZAKRESEM_DAT} Dla wybranej strefy czasowej podany przedział wykracza poza dostępne dane.`
+            `${KOMUNIKAT_POZA_ZAKRESEM_DAT} For the selected time zone, the specified interval exceeds available data.`
           );
         }
 
@@ -3065,11 +3057,11 @@
         const msg = normalizujKomunikatBleduSerwera(err.message || String(err));
         if (msg.includes("Failed to fetch") || msg.includes("404") || msg.includes("405") || msg.includes("501")) {
           plotStatus.textContent =
-            "Brak połączenia z endpointem /api/wykresy. Uruchom 'py -3.12 run_local.py' i otwórz http://127.0.0.1:8000/dwa%20wykresy.html";
-        } else if (msg.startsWith("Wyszedłeś poza")) {
+            "No connection to /api/wykresy endpoint. Run 'py -3.12 run_local.py' and open http://127.0.0.1:8000/dwa%20wykresy.html";
+        } else if (msg.startsWith("You went outside")) {
           plotStatus.textContent = msg;
         } else {
-          plotStatus.textContent = `Nie udało się wygenerować wykresów: ${msg}`;
+          plotStatus.textContent = `Failed to generate charts: ${msg}`;
         }
         plotStatus.classList.remove("hidden", "info");
       } finally {
@@ -3088,4 +3080,8 @@
     });
   </script>
 </body>
+
+
+
+
 </html>
