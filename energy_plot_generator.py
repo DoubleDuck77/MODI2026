@@ -60,6 +60,7 @@ FOLDER_CACHE_TOPO = "moon_topo_cache"
 I_S = 1361.0                         # Stała słoneczna [W/m^2]
 R_SUN = 6.96e5                       # Promień Słońca [km]
 R_MOON = 1737.4                      # Średni promień Księżyca [km]
+R_EARTH = 6371.0                     # Średni promień Ziemi [km]
 I_MOON = math.radians(1.5424)        # Nachylenie równika księżycowego do ekliptyki
 J2000 = datetime(2000, 1, 1, 12, 0, 0)
 
@@ -374,7 +375,7 @@ class TopografiaKsiezycaLOLA:
 
 
 # ==============================================================================
-# MECHANIKA NIEBA I GEOMETRIA WIDOCZNOŚCI TARCZY SŁOŃCA
+# MECHANIKA NIEBA I GEOMETRIA WIDOCZNOŚCI TARCZY SŁOŃCA (Z UWZGLĘDNIENIEM ZAĆMIEŃ)
 # ==============================================================================
 def _rot_x(a: float) -> np.ndarray:
     c, s = math.cos(a), math.sin(a)
@@ -395,6 +396,14 @@ def _macierz_orientacji_ksiezyca(d_j2000: float) -> np.ndarray:
     return _rot_z(-W) @ _rot_x(-I_MOON) @ _rot_z(-node_eq)
 
 
+def _normalizuj_wiersz_do_km(wiersz_6: list[float]) -> np.ndarray:
+    """Konwertuje wektor współrzędnych do kilometrów (jeśli plik CSV jest w metrach)."""
+    vec = np.array(wiersz_6, dtype=np.float64)
+    if np.linalg.norm(vec[3:6]) > 1e7:
+        vec *= 0.001
+    return vec
+
+
 def oblicz_pozycje_slonca_na_niebie_ksiezyca(
     dt_utc: datetime,
     wiersz_6: list[float],
@@ -408,7 +417,7 @@ def oblicz_pozycje_slonca_na_niebie_ksiezyca(
       - azymut_rad: azymut środka Słońca mierzony od północy na wschód [rad],
       - dystans_slonce_km: odległość od obserwatora na Księżycu do środka Słońca [km].
     """
-    vec = np.array(wiersz_6, dtype=np.float64)
+    vec = _normalizuj_wiersz_do_km(wiersz_6)
     sun_geo = vec[0:3]   # [km]
     moon_geo = vec[3:6]  # [km]
 
@@ -445,6 +454,126 @@ def oblicz_pozycje_slonca_na_niebie_ksiezyca(
     azymut_rad = math.atan2(v_e, v_n) % (2.0 * math.pi)
 
     return z_rad, azymut_rad, dystans_slonce_km
+
+
+def oblicz_pozycje_ziemi_na_niebie_ksiezyca(
+    dt_utc: datetime,
+    wiersz_6: list[float],
+    lat_deg: float,
+    lon_deg: float,
+    wysokosc_obs_m: float = 0.0,
+) -> tuple[float, float, float]:
+    """
+    Zwraca krotkę (z_ziemia_rad, azymut_ziemia_rad, dystans_ziemia_km):
+      - z_ziemia_rad: kąt elewacji środka Ziemi od lokalnego horyzontu matematycznego [rad],
+      - azymut_ziemia_rad: azymut środka Ziemi mierzony od północy na wschód [rad],
+      - dystans_ziemia_km: odległość od obserwatora na Księżycu do środka Ziemi [km].
+    """
+    vec = _normalizuj_wiersz_do_km(wiersz_6)
+    moon_geo = vec[3:6]  # [km]
+
+    earth_seleno_ecl = -moon_geo
+    d_j2000 = (dt_utc - J2000).total_seconds() / 86400.0
+    R_body = _macierz_orientacji_ksiezyca(d_j2000)
+    earth_body = R_body @ earth_seleno_ecl
+
+    lat = math.radians(lat_deg)
+    lon = math.radians(lon_deg)
+
+    up = np.array(
+        [math.cos(lat) * math.cos(lon), math.cos(lat) * math.sin(lon), math.sin(lat)],
+        dtype=np.float64,
+    )
+    east = np.array([-math.sin(lon), math.cos(lon), 0.0], dtype=np.float64)
+    north = np.array(
+        [-math.sin(lat) * math.cos(lon), -math.sin(lat) * math.sin(lon), math.cos(lat)],
+        dtype=np.float64,
+    )
+
+    r_obs = R_MOON + (wysokosc_obs_m / 1000.0)
+    obs_body = r_obs * up
+
+    vec_earth = earth_body - obs_body
+    dystans_ziemia_km = float(np.linalg.norm(vec_earth))
+
+    v_e = float(np.dot(vec_earth, east))
+    v_n = float(np.dot(vec_earth, north))
+    v_u = float(np.dot(vec_earth, up))
+
+    sin_z = max(-1.0, min(1.0, v_u / dystans_ziemia_km))
+    z_ziemia_rad = math.asin(sin_z)
+    azymut_ziemia_rad = math.atan2(v_e, v_n) % (2.0 * math.pi)
+
+    return z_ziemia_rad, azymut_ziemia_rad, dystans_ziemia_km
+
+
+def oblicz_procent_zasloniecia_slonca_przez_ziemie(
+    z_rad: float,
+    azymut_rad: float,
+    dystans_slonce_km: float,
+    z_ziemia_rad: float,
+    azymut_ziemia_rad: float,
+    dystans_ziemia_km: float,
+) -> float:
+    """
+    Oblicza, ile procent powierzchni tarczy Słońca [0.0, 100.0] jest zasłonięte
+    przez tarczę Ziemi (R_EARTH = 6371 km) podczas zaćmień.
+    """
+    if (
+        dystans_ziemia_km <= 0.0
+        or dystans_slonce_km <= 0.0
+        or dystans_ziemia_km >= dystans_slonce_km
+    ):
+        return 0.0
+
+    rho_sun = math.asin(min(1.0, R_SUN / dystans_slonce_km))
+    rho_earth = math.asin(min(1.0, R_EARTH / dystans_ziemia_km))
+
+    u_sun_e = math.cos(z_rad) * math.sin(azymut_rad)
+    u_sun_n = math.cos(z_rad) * math.cos(azymut_rad)
+    u_sun_u = math.sin(z_rad)
+
+    u_earth_e = math.cos(z_ziemia_rad) * math.sin(azymut_ziemia_rad)
+    u_earth_n = math.cos(z_ziemia_rad) * math.cos(azymut_ziemia_rad)
+    u_earth_u = math.sin(z_ziemia_rad)
+
+    cx = u_sun_n * u_earth_u - u_sun_u * u_earth_n
+    cy = u_sun_u * u_earth_e - u_sun_e * u_earth_u
+    cz = u_sun_e * u_earth_n - u_sun_n * u_earth_e
+    cross_norm = math.sqrt(cx * cx + cy * cy + cz * cz)
+    dot_val = max(-1.0, min(1.0, u_sun_e * u_earth_e + u_sun_n * u_earth_n + u_sun_u * u_earth_u))
+    d_rad = math.atan2(cross_norm, dot_val)
+
+    if d_rad >= rho_sun + rho_earth:
+        return 0.0
+
+    if d_rad <= abs(rho_earth - rho_sun):
+        if rho_earth >= rho_sun:
+            return 100.0
+        return ((rho_earth / rho_sun) ** 2) * 100.0
+
+    arg1 = max(-1.0, min(1.0, (d_rad ** 2 + rho_sun ** 2 - rho_earth ** 2) / (2.0 * d_rad * rho_sun)))
+    arg2 = max(-1.0, min(1.0, (d_rad ** 2 + rho_earth ** 2 - rho_sun ** 2) / (2.0 * d_rad * rho_earth)))
+    pierwiastek = math.sqrt(
+        max(
+            0.0,
+            (-d_rad + rho_sun + rho_earth)
+            * (d_rad + rho_sun - rho_earth)
+            * (d_rad - rho_sun + rho_earth)
+            * (d_rad + rho_sun + rho_earth),
+        )
+    )
+    pole_wspolne = (
+        (rho_sun ** 2) * math.acos(arg1)
+        + (rho_earth ** 2) * math.acos(arg2)
+        - 0.5 * pierwiastek
+    )
+    pole_slonca = math.pi * (rho_sun ** 2)
+    if pole_slonca <= 0.0:
+        return 0.0
+
+    procent_zasloniecia = (pole_wspolne / pole_slonca) * 100.0
+    return max(0.0, min(100.0, procent_zasloniecia))
 
 
 def oblicz_widoczny_ulamek_tarczy_slonca(
@@ -558,11 +687,11 @@ def generuj_dane_naslonecznienia(
          [
            [
              data_i_godzina_lokalna_str,                 # kol. 1: 'YYYY-MM-DD HH:MM'
-             natezenie_pozioma_W_m2,                     # kol. 2: I_S * sin(z) * alpha [W/m^2]
+             natezenie_pozioma_W_m2,                     # kol. 2: I_S * sin(z) * alpha * (widoczny_%_zacmienie / 100) [W/m^2]
              energia_skumulowana_pozioma_J_m2,           # kol. 3: energia na płaszczyźnie poziomej [J/m^2]
-             natezenie_pionowa_W_m2,                     # kol. 4: I_S * cos(z) * alpha (płaszczyzna prostopadła do gruntu) [W/m^2]
+             natezenie_pionowa_W_m2,                     # kol. 4: I_S * cos(z) * alpha * (widoczny_%_zacmienie / 100) [W/m^2]
              energia_skumulowana_pionowa_J_m2,           # kol. 5: energia na płaszczyźnie prostopadłej do gruntu [J/m^2]
-             natezenie_bez_elewacji_W_m2,                # kol. 6: I_S * alpha (z pominięciem kąta elewacji z) [W/m^2]
+             natezenie_bez_elewacji_W_m2,                # kol. 6: I_S * alpha * (widoczny_%_zacmienie / 100) [W/m^2]
              energia_skumulowana_bez_elewacji_J_m2,      # kol. 7: energia skumulowana z pominięciem kąta elewacji [J/m^2]
            ],
            ...
@@ -642,6 +771,14 @@ def generuj_dane_naslonecznienia(
             wysokosc_obs_m=topografia.wysokosc_obserwatora_m,
         )
 
+        z_ziemia_rad, azymut_ziemia_rad, dystans_ziemia_km = oblicz_pozycje_ziemi_na_niebie_ksiezyca(
+            dt_utc=dt_utc,
+            wiersz_6=wiersz_6,
+            lat_deg=lat_deg,
+            lon_deg=lon_deg,
+            wysokosc_obs_m=topografia.wysokosc_obserwatora_m,
+        )
+
         rho_sun = math.asin(min(1.0, R_SUN / dystans_slonce_km))
         kat_gor_rad = topografia.kat_horyzontu(azymut_rad)
 
@@ -655,16 +792,27 @@ def generuj_dane_naslonecznienia(
             topografia=topografia,
         )
 
+        procent_zasloniecia_ziemia = oblicz_procent_zasloniecia_slonca_przez_ziemie(
+            z_rad=z_rad,
+            azymut_rad=azymut_rad,
+            dystans_slonce_km=dystans_slonce_km,
+            z_ziemia_rad=z_ziemia_rad,
+            azymut_ziemia_rad=azymut_ziemia_rad,
+            dystans_ziemia_km=dystans_ziemia_km,
+        )
+        procent_widoczny_tarczy_slonca = max(0.0, min(100.0, 100.0 - procent_zasloniecia_ziemia))
+        wspolczynnik_widocznosci_zacmienie = procent_widoczny_tarczy_slonca / 100.0
+
         # 1) Płaszczyzna pozioma (równoległa do gruntu): rzut cos(90° - z) = sin(z)
         sin_z_dodatni = max(0.0, math.sin(z_rad))
-        natezenie_poz_w_m2 = I_S * sin_z_dodatni * alpha
+        natezenie_poz_w_m2 = I_S * sin_z_dodatni * alpha * wspolczynnik_widocznosci_zacmienie
 
         # 2) Płaszczyzna pionowa (prostopadła do gruntu, skierowana na azymut Słońca): rzut cos(z)
         cos_z_dodatni = max(0.0, math.cos(z_rad))
-        natezenie_pion_w_m2 = I_S * cos_z_dodatni * alpha
+        natezenie_pion_w_m2 = I_S * cos_z_dodatni * alpha * wspolczynnik_widocznosci_zacmienie
 
         # 3) Płaszczyzna z pominięciem kąta elewacji z (panel skierowany bezpośrednio do Słońca)
-        natezenie_bez_elewacji_w_m2 = I_S * alpha
+        natezenie_bez_elewacji_w_m2 = I_S * alpha * wspolczynnik_widocznosci_zacmienie
 
         if poprzedni_dt_utc is not None:
             dt_sekundy = (dt_utc - poprzedni_dt_utc).total_seconds()
