@@ -106,15 +106,7 @@
       gap: clamp(16px, 2.2vw, 26px);
     }
 
-    /* --- Główny tytuł na samej górze --- */
-    .main-title {
-      margin: 0;
-      text-align: center;
-      font-size: clamp(1.3rem, 2.2vw, 1.95rem);
-      font-weight: 600;
-      letter-spacing: 0.02em;
-      color: #ffffff;
-    }
+    /* --- Pasek nagłówka z przyciskiem powrotu --- */
     .title-bar {
       width: 100%;
       display: grid;
@@ -161,6 +153,16 @@
       .back-btn {
         align-self: flex-start;
       }
+    }
+
+    /* --- Główny tytuł na samej górze --- */
+    .main-title {
+      margin: 0;
+      text-align: center;
+      font-size: clamp(1.3rem, 2.2vw, 1.95rem);
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: #ffffff;
     }
 
     /* --- Sekcja wyboru typu wykresu --- */
@@ -1850,14 +1852,17 @@
         regionyIStrefyIana = dane.regiony;
       } catch {
         try {
-          const respPy = await fetch("time_zone_converter.py");
-          if (!respPy.ok) throw new Error("Nie można pobrać time_zone_converter.py");
+          let respPy = await fetch("../time_zone_converter.py");
+          if (!respPy.ok) {
+            respPy = await fetch("time_zone_converter.py");
+          }
+          if (!respPy.ok) throw new Error("Nie można pobrać ../time_zone_converter.py");
           const kodPy = await respPy.text();
           krajeIStrefyIana = wyciagnijSlownikZPythona(kodPy, "kraje_i_strefy_iana");
           regionyIStrefyIana = wyciagnijSlownikZPythona(kodPy, "regiony_i_strefy_iana");
         } catch (err) {
           tzStatus.textContent =
-            "Nie udało się wczytać danych z time_zone_converter.py. Uruchom 'python server.py' w folderze projektu i otwórz http://127.0.0.1:8000";
+            "Nie udało się wczytać danych z ../time_zone_converter.py. Uruchom serwer w folderze projektu i otwórz http://127.0.0.1:8000";
           tzStatus.classList.remove("hidden");
           return;
         }
@@ -3117,7 +3122,7 @@
         const msg = normalizujKomunikatBleduSerwera(err.message || String(err));
         if (msg.includes("Failed to fetch") || msg.includes("404") || msg.includes("405") || msg.includes("501")) {
           plotStatus.textContent =
-            "Brak połączenia z endpointem /api/wykresy. Uruchom 'python server.py' w folderze projektu i otwórz http://127.0.0.1:8000";
+            "Brak połączenia z endpointem /api/wykresy. Uruchom serwer backendu w folderze projektu i otwórz http://127.0.0.1:8000";
         } else if (msg.startsWith("Wyszedłeś poza")) {
           plotStatus.textContent = msg;
         } else {
