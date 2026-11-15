@@ -41,6 +41,24 @@ export function textSize(ctx, str, font = FONT) {
   return { w: Math.ceil(m.width), h: Math.ceil((m.fontBoundingBoxAscent ?? 12) + (m.fontBoundingBoxDescent ?? 4)) };
 }
 
+/** Łamie tekst na wiersze nie szersze niż maxW (cięcie na separatorze `sep`). */
+export function wrapLines(ctx, str, maxW, font = FONT, sep = ' ') {
+  ctx.font = font;
+  const rows = [];
+  let row = '';
+  for (const part of str.split(sep)) {
+    const next = row ? row + sep + part : part;
+    if (row && ctx.measureText(next).width > maxW) {
+      rows.push(row);
+      row = part;
+    } else {
+      row = next;
+    }
+  }
+  if (row) rows.push(row);
+  return rows;
+}
+
 /** draw_sun_marker (neworb.py:884-891) */
 export function drawSunMarker(ctx, x, y, size = 6) {
   for (let k = 0; k < 8; k++) {

@@ -5,7 +5,7 @@
 import { drawChart } from './charts.js';
 import {
   FONT, FONT_BOLD, FONT_SMALL, circle, drawEarthMarker, drawSunMarker, fmtComma, fmtSigned, fmtWidth, line, rgb,
-  roundRect, text, textSize,
+  roundRect, text, textSize, wrapLines,
 } from './draw2d.js';
 import { GroundTrackMap } from './ground-map.js';
 import { createMoonRenderer } from './moon-render.js';
@@ -100,7 +100,7 @@ export async function createOrbitMode({ root, api, endpoint, clock }) {
   const camera = new OrbitCamera(15.0, 0.0, 6000.0);
   let draggingCam = false;
   let lastMouse = [0, 0];
-  const slider = { x: 30, y: 845, w: 300, h: 10, min: 1.0, max: 100000.0, val: 30.0, label: 'Tempo symulacji', dragging: false };
+  const slider = { x: 30, y: 845, w: 300, h: 10, min: 1.0, max: 100000.0, val: 30.0, label: 'Sim speed', dragging: false };
   let epochMs = clock.t;
   let netError = '';
 
@@ -140,7 +140,7 @@ export async function createOrbitMode({ root, api, endpoint, clock }) {
       player.append(tr, from.t);
       netError = '';
     }).catch((err) => {
-      if (err?.name !== 'AbortError') netError = `Błąd backendu: ${err?.message ?? err}`;
+      if (err?.name !== 'AbortError') netError = `Backend error: ${err?.message ?? err}`;
     }).finally(() => { if (inflight === ctrl) inflight = null; });
   }
 
@@ -163,7 +163,7 @@ export async function createOrbitMode({ root, api, endpoint, clock }) {
       syncClock();
       requestChunk({ t: 0, pos: st.pos_km, vel: st.vel_kms });
     } catch (err) {
-      netError = `Błąd backendu: ${err?.message ?? err}`;
+      netError = `Backend error: ${err?.message ?? err}`;
     }
   }
   // Parametry ostatniej własnej orbity: reset do nowej epoki (zmiana czasu w nagłówku) zachowuje
@@ -210,9 +210,36 @@ export async function createOrbitMode({ root, api, endpoint, clock }) {
   const layout = { width: 1, height: 1, panelX: 650, panelW: 250, panelTop: 75, panelH: 300 };
   const presetRect = (i) => ({ x: 25 + i * 137, y: 20, w: 128, h: 34 });
   const sliderRect = () => ({ x: slider.x, y: slider.y, w: slider.w, h: slider.h });
-  const fieldRect = (fi) => ({ x: 430, y: 310 + fi * 58, w: 260, h: 38 });
-  const APPLY = { x: 430, y: 510, w: 125, h: 40 };
-  const CANCEL = { x: 565, y: 510, w: 125, h: 40 };
+  // Okno „Custom orbit”: jedna geometria dla rysowania i trafień, wyśrodkowana na kanwie;
+  // wysokość rośnie z liczbą wierszy podpowiedzi / błędu, żeby tekst nie wychodził poza ramkę.
+  const DLG_W = 360;
+  const DLG_PAD = 24;
+  const DLG_HINT = 'Tab: next field  Enter: apply  Esc: cancel';
+  const HELP = 'Drag: rotate  Scroll: zoom  Space: pause  E: Earth view  '
+    + 'G: ground track  P: Earth + Sun  M: mascon gravity  V: mascon map';
+  function dialogLayout() {
+    const innerW = DLG_W - 2 * DLG_PAD;
+    const msgFont = customError ? FONT : FONT_SMALL;
+    const msgRows = customError
+      ? wrapLines(ctx, customError, innerW, FONT)
+      : wrapLines(ctx, DLG_HINT, innerW, FONT_SMALL, '  ');
+    const msgLineH = customError ? 19 : 17;
+    const msgY = 354;
+    const h = msgY + msgRows.length * msgLineH + 16;
+    const x = Math.round((layout.width - DLG_W) / 2);
+    const y = Math.max(12, Math.round((layout.height - h) / 2));
+    const btnW = Math.trunc((innerW - 10) / 2);
+    return {
+      box: { x, y, w: DLG_W, h },
+      inner: { x: x + DLG_PAD, w: innerW },
+      titleY: y + 22,
+      fields: [0, 1, 2].map((fi) => ({ x: x + DLG_PAD, y: y + 82 + fi * 70, w: innerW, h: 38 })),
+      suggestY: y + 276,
+      apply: { x: x + DLG_PAD, y: y + 302, w: btnW, h: 40 },
+      cancel: { x: x + DLG_W - DLG_PAD - btnW, y: y + 302, w: btnW, h: 40 },
+      msg: { rows: msgRows, font: msgFont, lineH: msgLineH, y: y + msgY },
+    };
+  }
   const sliderUpdate = (mx) => {
     const ratio = Math.max(0, Math.min(1, (mx - slider.x) / Math.max(1, slider.w)));
     slider.val = slider.min * (slider.max / slider.min) ** ratio;
@@ -220,7 +247,7 @@ export async function createOrbitMode({ root, api, endpoint, clock }) {
 
   function pyFloat(s) {
     const t = s.trim();
-    if (!/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(t)) throw new Error(`could not convert string to float: '${s}'`);
+    if (!/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(t)) throw new Error(`Not a number: '${s}'`);
     return Number(t);
   }
 
@@ -230,18 +257,19 @@ export async function createOrbitMode({ root, api, endpoint, clock }) {
     const my = ev.clientY - r.top;
     if (ev.button !== 0) return;
     if (customDialog) {
-      for (let fi = 0; fi < 3; fi++) if (inside(fieldRect(fi), mx, my)) customActive = fi;
-      if (inside(APPLY, mx, my)) {
+      const dl = dialogLayout();
+      for (let fi = 0; fi < 3; fi++) if (inside(dl.fields[fi], mx, my)) customActive = fi;
+      if (inside(dl.apply, mx, my)) {
         try {
           const [alt, inc, speed] = customFields.map(pyFloat);
-          if (!(alt >= 1.0 && alt <= 100000.0)) throw new Error('Wysokość musi być w zakresie 1–100000 km.');
-          if (!(inc >= 0.0 && inc <= 180.0)) throw new Error('Inklinacja musi być w zakresie 0–180°.');
-          if (!(speed > 0.0 && speed <= 10.0)) throw new Error('Prędkość musi być w zakresie 0–10 km/s.');
+          if (!(alt >= 1.0 && alt <= 100000.0)) throw new Error('Altitude must be 1–100000 km.');
+          if (!(inc >= 0.0 && inc <= 180.0)) throw new Error('Inclination must be 0–180°.');
+          if (!(speed > 0.0 && speed <= 10.0)) throw new Error('Speed must be 0–10 km/s.');
           applyCustom(alt, inc, speed);
         } catch (exc) {
-          customError = exc.message || 'Wprowadź poprawne liczby.';
+          customError = exc.message || 'Enter valid numbers.';
         }
-      } else if (inside(CANCEL, mx, my)) {
+      } else if (inside(dl.cancel, mx, my)) {
         customDialog = false;
       }
       return;
@@ -291,16 +319,16 @@ export async function createOrbitMode({ root, api, endpoint, clock }) {
     const k = ev.key;
     if (customDialog) {
       if (k === 'Escape') customDialog = false;
-      else if (k === 'Tab') customActive = (customActive + 1) % 3;
+      else if (k === 'Tab') customActive = (customActive + (ev.shiftKey ? 2 : 1)) % 3;
       else if (k === 'Enter') {
         try {
           const [alt, inc, speed] = customFields.map(pyFloat);
           if (!(alt >= 1.0 && alt <= 100000.0 && inc >= 0.0 && inc <= 180.0 && speed > 0.0 && speed <= 10.0)) {
-            throw new Error('Poza dozwolonym zakresem.');
+            throw new Error('Out of range.');
           }
           applyCustom(alt, inc, speed);
         } catch {
-          customError = 'Niepoprawne dane lub wartości poza zakresem.';
+          customError = 'Invalid input or value out of range.';
         }
       } else if (k === 'Backspace') customFields[customActive] = customFields[customActive].slice(0, -1);
       else if (k.length === 1 && '0123456789.-'.includes(k) && customFields[customActive].length < 14) customFields[customActive] += k;
@@ -484,7 +512,7 @@ export async function createOrbitMode({ root, api, endpoint, clock }) {
       }
       if (satVisible) {
         circle(ctx, crashed ? [255, 80, 80] : [255, 220, 80], satXY[0], satXY[1], 6);
-        text(ctx, 'Sonda', [255, 255, 255], satXY[0] + 10, satXY[1] - 10, FONT);
+        text(ctx, 'Probe', [255, 255, 255], satXY[0] + 10, satXY[1] - 10, FONT);
       }
     }
     ctx.restore();
@@ -492,20 +520,21 @@ export async function createOrbitMode({ root, api, endpoint, clock }) {
     roundRect(ctx, [10, 13, 20], 0, height - 86, panelX, 86, 0, 0, 170 / 255);
     presets.forEach(([label, key], i) => {
       const r = presetRect(i);
-      const active = currentPreset === key;
+      const active = currentPreset === key || (key === 'CUSTOM' && currentPreset === 'Custom');
       roundRect(ctx, active ? [50, 120, 190] : [30, 36, 48], r.x, r.y, r.w, r.h, 6);
       roundRect(ctx, [80, 150, 230], r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1, 6, 1);
       const { w } = textSize(ctx, label, FONT);
       text(ctx, label, [240, 245, 255], r.x + r.w / 2 - Math.trunc(w / 2), r.y + 9, FONT);
     });
-    const helpLines = ['LPM: obrót  scroll: zoom  SPACJA: pauza  E: Ziemia',
-      'G: tor  P: 3. ciało  M: mascony (fizyka)  V: mapa masconów'];
-    helpLines.forEach((l, i) => text(ctx, l, [150, 160, 175], 355, height - 72 + i * 20, FONT));
+    // skróty klawiszowe zawijane w szerokości paska (do panelu telemetrii), a nie ucinane pod nim
+    const helpRows = wrapLines(ctx, HELP, Math.max(120, panelX - 365), FONT_SMALL, '  ');
+    const helpTop = height - 86 + Math.max(4, Math.trunc((86 - helpRows.length * 17) / 2));
+    helpRows.forEach((l, i) => text(ctx, l, [150, 160, 175], 355, helpTop + i * 17, FONT_SMALL));
 
     // panel telemetrii (neworb.py:1404-1463)
     roundRect(ctx, [16, 20, 28], panelX, panelTop, panelW, panelH, 8);
     roundRect(ctx, [45, 55, 75], panelX + 0.5, panelTop + 0.5, panelW - 1, panelH - 1, 8, 1);
-    const lines = [['--- TELEMETRIA ---', [210, 215, 225]], [`Preset: ${currentPreset}`, [210, 215, 225]]];
+    const lines = [['--- TELEMETRY ---', [210, 215, 225]], [`Preset: ${currentPreset}`, [210, 215, 225]]];
     let period = 7 * 86400.0;
     if (st) {
       const altitude = norm(pos) - R_MOON;
@@ -517,27 +546,27 @@ export async function createOrbitMode({ root, api, endpoint, clock }) {
       const along = dot(pos, sunDir);
       const inShadow = along < 0 && norm(pos.map((x, k) => x - along * sunDir[k])) < R_MOON;
       const timeLine = `UTC: ${fmtUtc(epochMs + timeElapsed * 1000)}   T+${(timeElapsed / 3600.0).toFixed(2)} h`;
-      const lightLine = `Słońce nad p. podsat.: ${fmtSigned(sunElev, 1, 5)}° (${sunElev > 0 ? 'dzień' : 'noc'})  sonda: ${inShadow ? 'w cieniu' : 'w słońcu'}`;
+      const lightLine = `Sun above subsat. pt: ${fmtSigned(sunElev, 1, 5)}° (${sunElev > 0 ? 'day' : 'night'})  probe: ${inShadow ? 'in shadow' : 'in sunlight'}`;
       let masconLine;
       let masconCol;
       if (useMascons) {
         const tag = st.nearest ? ` [${st.nearest}]` : '';
-        masconLine = `Anomalia masconów: ${fmtSigned(st.dgR, 1, 6)} mGal (poz. ${fmtWidth(st.dgH, 1, 5)})${tag}`;
+        masconLine = `Mascon anomaly: ${fmtSigned(st.dgR, 1, 6)} mGal (horiz. ${fmtWidth(st.dgH, 1, 5)})${tag}`;
         masconCol = Math.abs(st.dgR) > 25.0 ? [255, 145, 175] : [210, 215, 225];
       } else {
-        masconLine = 'Anomalia masconów: WYŁĄCZONA (klawisz M)';
+        masconLine = 'Mascon anomaly: OFF (press M)';
         masconCol = [140, 150, 165];
       }
       const haStr = st.ha == null ? '∞' : fmtComma(st.ha, 1);
-      let model = 'monopol + J2';
-      if (useMascons) model += ' + C22/J3/J4 + 14 masconów';
-      if (perturbations) model += ' + Ziemia + Słońce';
-      const statusText = paused && !crashed ? 'PAUZA' : (crashed ? crashReason : 'SYMULACJA AKTYWNA');
+      let model = 'monopole + J2';
+      if (useMascons) model += ' + C22/J3/J4 + 14 mascons';
+      if (perturbations) model += ' + Earth + Sun';
+      const statusText = paused && !crashed ? 'PAUSED' : (crashed ? crashReason : 'RUNNING');
       lines.push(
         [timeLine, [210, 215, 225]],
-        [`Wysokość: ${fmtComma(altitude, 2)} km   Prędkość: ${speed.toFixed(4)} km/s`, [210, 215, 225]],
-        [`Orbita oskul.: ${fmtComma(st.hp, 1)} × ${haStr} km   e = ${st.ecc.toFixed(5)}`, [150, 220, 255]],
-        [`Punkt podsatelitarny: ${fmtSigned(subLat, 3, 8)}°  ${fmtSigned(subLon, 3, 9)}°`, [255, 190, 110]],
+        [`Altitude: ${fmtComma(altitude, 2)} km   Speed: ${speed.toFixed(4)} km/s`, [210, 215, 225]],
+        [`Osc. orbit: ${fmtComma(st.hp, 1)} × ${haStr} km   e = ${st.ecc.toFixed(5)}`, [150, 220, 255]],
+        [`Subsatellite point: ${fmtSigned(subLat, 3, 8)}°  ${fmtSigned(subLon, 3, 9)}°`, [255, 190, 110]],
         [masconLine, masconCol],
         [lightLine, [210, 215, 225]],
         [`Model: ${model}`, [210, 215, 225]],
@@ -548,7 +577,7 @@ export async function createOrbitMode({ root, api, endpoint, clock }) {
         period = energy < 0 ? 2 * Math.PI * Math.sqrt((-GM / (2 * energy)) ** 3 / GM) : 7 * 86400.0;
       }
     } else {
-      lines.push([netError || 'Wczytywanie orbity z backendu…', netError ? [255, 105, 105] : [210, 215, 225]]);
+      lines.push([netError || 'Loading orbit…', netError ? [255, 105, 105] : [210, 215, 225]]);
     }
     if (st && netError) lines.push([netError, [255, 105, 105]]);
     lines.forEach(([l, col], i) => text(ctx, l, col, panelX + 16, panelTop + 12 + i * 19, FONT));
@@ -561,7 +590,7 @@ export async function createOrbitMode({ root, api, endpoint, clock }) {
     const avail = panelBottom - (mapTitleY + 22) - 175;
     if (mapH > avail) { mapH = Math.max(60, avail); mapW = 2 * mapH; }
     const mapRect = { x: panelX + 16, y: mapTitleY + 22, w: mapW, h: mapH };
-    text(ctx, 'Tor podsatelitarny [lat/lon]', [180, 200, 220], panelX + 16, mapTitleY, FONT_BOLD);
+    text(ctx, 'Ground track [lat/lon]', [180, 200, 220], panelX + 16, mapTitleY, FONT_BOLD);
     if (trackMap && pos) {
       trackMap.draw(ctx, mapRect, track, timeElapsed, Math.min(period, 7 * 86400.0), pos, sunDir, subsolar, subearth, catalog, showMascons);
     }
@@ -570,8 +599,8 @@ export async function createOrbitMode({ root, api, endpoint, clock }) {
     const chartsY = mapRect.y + mapRect.h + 22;
     const chartH = Math.max(50, Math.min(170, panelBottom - chartsY - 34));
     const chartW = Math.trunc((panelW - 32 - 12) / 2);
-    drawChart(ctx, 'Wysokość [km]', historyAlt, panelX + 16, chartsY, chartW, chartH, [80, 220, 140], 'km');
-    drawChart(ctx, 'Prędkość [km/s]', historyVel, panelX + 28 + chartW, chartsY, chartW, chartH, [250, 160, 60], 'km/s');
+    drawChart(ctx, 'Altitude [km]', historyAlt, panelX + 16, chartsY, chartW, chartH, [80, 220, 140], 'km');
+    drawChart(ctx, 'Speed [km/s]', historyVel, panelX + 28 + chartW, chartsY, chartW, chartH, [250, 160, 60], 'km/s');
 
     // suwak tempa (TimeSlider.draw)
     roundRect(ctx, [50, 60, 75], slider.x, slider.y, slider.w, slider.h, 4);
@@ -587,26 +616,31 @@ export async function createOrbitMode({ root, api, endpoint, clock }) {
   function drawCustomDialog(width, height) {
     ctx.fillStyle = 'rgba(0,0,0,0.686)';
     ctx.fillRect(0, 0, width, height);
-    roundRect(ctx, [22, 29, 42], 390, 245, 320, 335, 10);
-    roundRect(ctx, [90, 135, 185], 391, 246, 318, 333, 10, 2);
-    text(ctx, 'CUSTOM ORBIT', [240, 245, 255], 420, 265, FONT_BOLD);
-    ['Wysokość [km]', 'Inklinacja [deg]', 'Prędkość [km/s]'].forEach((label, fi) => {
-      const y = 310 + fi * 58;
-      text(ctx, label, [205, 215, 230], 420, y - 21, FONT);
-      roundRect(ctx, fi === customActive ? [45, 58, 76] : [30, 38, 52], 430, y, 260, 38, 5);
-      roundRect(ctx, [100, 165, 225], 430.5, y + 0.5, 259, 37, 5, 1);
-      text(ctx, customFields[fi], [255, 255, 255], 442, y + 10, FONT_BOLD);
+    const dl = dialogLayout();
+    const { box, inner } = dl;
+    roundRect(ctx, [22, 29, 42], box.x, box.y, box.w, box.h, 10);
+    roundRect(ctx, [90, 135, 185], box.x + 1, box.y + 1, box.w - 2, box.h - 2, 10, 2);
+    text(ctx, 'Custom orbit', [240, 245, 255], inner.x, dl.titleY, FONT_BOLD);
+    ['Altitude [km]', 'Inclination [deg]', 'Speed [km/s]'].forEach((label, fi) => {
+      const r = dl.fields[fi];
+      const active = fi === customActive;
+      text(ctx, label, [205, 215, 230], r.x, r.y - 22, FONT);
+      roundRect(ctx, active ? [45, 58, 76] : [30, 38, 52], r.x, r.y, r.w, r.h, 5);
+      if (active) roundRect(ctx, [150, 200, 245], r.x + 1, r.y + 1, r.w - 2, r.h - 2, 5, 2);
+      else roundRect(ctx, [100, 165, 225], r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1, 5, 1);
+      text(ctx, customFields[fi], [255, 255, 255], r.x + 12, r.y + 10, FONT_BOLD);
     });
     const f0 = customFields[0];
     // Python: custom_fields[0].replace('.', '', 1).isdigit() and float(custom_fields[0]) > 0
     const v0 = /^\d+$/.test(f0.replace('.', '')) && Number(f0) > 0 ? circularSpeed(Number(f0)) : 0.0;
-    text(ctx, `Sugestia: prędkość kołowa = ${v0.toFixed(4)} km/s`, [120, 220, 160], 420, 490, FONT);
-    roundRect(ctx, [45, 115, 80], 430, 510, 125, 40, 5);
-    roundRect(ctx, [65, 75, 95], 565, 510, 125, 40, 5);
-    text(ctx, 'Zastosuj', [255, 255, 255], 460, 523, FONT);
-    text(ctx, 'Anuluj', [255, 255, 255], 596, 523, FONT);
-    if (customError) text(ctx, customError.slice(0, 48), [255, 120, 120], 420, 555, FONT);
-    else text(ctx, 'TAB: następne pole | ENTER: zastosuj | ESC: wyjście', [175, 185, 200], 405, 555, FONT);
+    text(ctx, `Circular speed: ${v0.toFixed(4)} km/s`, [120, 220, 160], inner.x, dl.suggestY, FONT);
+    for (const [r, label, fill] of [[dl.apply, 'Apply', [45, 115, 80]], [dl.cancel, 'Cancel', [65, 75, 95]]]) {
+      roundRect(ctx, fill, r.x, r.y, r.w, r.h, 5);
+      const { w, h } = textSize(ctx, label, FONT);
+      text(ctx, label, [255, 255, 255], r.x + Math.round((r.w - w) / 2), r.y + Math.round((r.h - h) / 2), FONT);
+    }
+    const msgColor = customError ? [255, 120, 120] : [175, 185, 200];
+    dl.msg.rows.forEach((row, i) => text(ctx, row, msgColor, inner.x, dl.msg.y + i * dl.msg.lineH, dl.msg.font));
   }
 
   // --- pętla ---

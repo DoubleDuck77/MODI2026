@@ -23,10 +23,10 @@
     "on_below_sun_elevation_deg": -6.0,
     "fade_deg": 6.0,
     "cities": [
-      {"name": "Warszawa", "location": {"lat_deg": 52.2297, "lon_deg": 21.0122}, "sun_elevation_deg": -56.94, "lights_on": true},
+      {"name": "Warsaw", "location": {"lat_deg": 52.2297, "lon_deg": 21.0122}, "sun_elevation_deg": -56.94, "lights_on": true},
       {"name": "Stalowa Wola", "location": {"lat_deg": 50.5826, "lon_deg": 22.0532}, "sun_elevation_deg": -57.86, "lights_on": true},
-      {"name": "Nowy Jork", "location": {"lat_deg": 40.7128, "lon_deg": -74.006}, "sun_elevation_deg": -25.94, "lights_on": true},
-      {"name": "Tokio", "location": {"lat_deg": 35.6762, "lon_deg": 139.6503}, "sun_elevation_deg": 19.56, "lights_on": false}
+      {"name": "New York", "location": {"lat_deg": 40.7128, "lon_deg": -74.006}, "sun_elevation_deg": -25.94, "lights_on": true},
+      {"name": "Tokyo", "location": {"lat_deg": 35.6762, "lon_deg": 139.6503}, "sun_elevation_deg": 19.56, "lights_on": false}
     ]
   }
 }

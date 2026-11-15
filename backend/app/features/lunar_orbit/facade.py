@@ -42,11 +42,14 @@ PRESET_LABELS = (
 
 # Komunikaty końca symulacji — dosłownie z ``neworb.py:1298-1320``.
 STATUS_MESSAGES = {
-    "crash": "Zderzenie z powierzchnią Księżyca",
-    "escape": "Sonda uciekła poza obszar symulacji",
-    "nan": "Błąd numeryczny — stan nie jest skończony",
-    "ephemeris_end": "Koniec danych efemeryd (2100-01-01 00:00 UTC)",
+    "crash": "Crashed into the lunar surface",
+    "escape": "Probe left the simulation region",
+    "nan": "Numerical error: state is not finite",
+    "ephemeris_end": "End of ephemeris data (2100-01-01 00:00 UTC)",
 }
+
+# Nazwy punktów orientacyjnych z ``neworb.LUNAR_LANDMARKS`` wysyłane na stronę po angielsku.
+LANDMARK_NAMES_EN = {"Biegun N": "North Pole", "Biegun S": "South Pole"}
 
 UNITS = {"distance": "km", "velocity": "km/s", "time": "s", "angle": "deg", "gravity_anomaly": "mGal"}
 
@@ -111,7 +114,7 @@ class LunarOrbitFacade(BaseFacade):
                 for n, la, lo, d, b, mu in nb.LUNAR_MASCONS
             ],
             landmarks=[
-                Landmark(name=n, lat_deg=la, lon_deg=lo, kind=k, color_rgb=tuple(nb.LANDMARK_COLORS[k]))
+                Landmark(name=LANDMARK_NAMES_EN.get(n, n), lat_deg=la, lon_deg=lo, kind=k, color_rgb=tuple(nb.LANDMARK_COLORS[k]))
                 for n, la, lo, k in nb.LUNAR_LANDMARKS
             ],
         )

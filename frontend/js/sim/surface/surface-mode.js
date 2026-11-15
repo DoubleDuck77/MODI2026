@@ -25,8 +25,8 @@ const OBSERVER_DEBOUNCE_MS = 250;
 const RETRY_MS = 1000;                 // ponowienie obserwatora/kafli/gwiazd po błędzie sieci
 const MIN_TEXTURE_SIZE = 8192;         // albedo z pełnym pierścieniem: 32 × 256 px; Ziemia 8192 × 4096
 
-const MSG_NO_WEBGL2 = 'Tryb Powierzchnia wymaga WebGL2 — ta przeglądarka go nie obsługuje.';
-const MSG_CONTEXT_LOST = 'Utracono kontekst WebGL — odśwież stronę.';
+const MSG_NO_WEBGL2 = 'Surface mode needs WebGL2, which this browser does not support.';
+const MSG_CONTEXT_LOST = 'WebGL context lost. Reload the page.';
 
 // geografia.py:2673-2679 — (Name, Lat_deg, Lon_deg, Initial_Azimuth_deg); klawisze K_1..K_5 (górny rząd)
 const PRESETS = {
@@ -99,7 +99,7 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
   if (!gl) return errorMode(root, MSG_NO_WEBGL2);
   const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
   if (!(maxTex >= MIN_TEXTURE_SIZE)) {
-    return errorMode(root, `GPU obsługuje tekstury do ${maxTex} px, teren wymaga ${MIN_TEXTURE_SIZE} px.`);
+    return errorMode(root, `This GPU supports textures up to ${maxTex} px; the terrain needs ${MIN_TEXTURE_SIZE} px.`);
   }
   const overlay = document.createElement('canvas');
   overlay.className = 'surface-overlay';
@@ -239,7 +239,7 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
       if (e?.name === 'AbortError' || seq !== obsSeq) return;
       console.error(e);
       // błąd HTTP/sieci (obserwator albo kafel): komunikat i ponowienie, dopóki obserwator jest bieżący
-      setStatus(`Błąd terenu: ${e?.message ?? e} — ponawiam`);
+      setStatus(`Terrain error: ${e?.message ?? e}. Retrying…`);
       clearTimeout(obsTimer);
       obsTimer = setTimeout(() => { if (seq === obsSeq) loadObserver(); }, RETRY_MS);
     } finally {
@@ -264,7 +264,7 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
     })
     .catch((e) => {
       console.error(e);
-      fatal(`Nie udało się przygotować terenu: ${e?.message ?? e}`);
+      fatal(`Couldn't load the terrain: ${e?.message ?? e}`);
     });
 
   // --- niebo GPU: gwiazdy (static) → SkyRenderer; tekstury Ziemi w tle ---
@@ -277,7 +277,7 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
       })
       .catch((e) => {
         console.error(e);
-        setStatus(`Błąd gwiazd: ${e?.message ?? e} — ponawiam`);
+        setStatus(`Star catalog error: ${e?.message ?? e}. Retrying…`);
         setTimeout(loadStars, RETRY_MS);
       });
   }
@@ -322,7 +322,7 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
       .catch((e) => {
         if (e?.name === 'AbortError') return;
         skyReqKey = '';   // 503 / błąd sieci: ponów po SKY_MIN_INTERVAL_MS
-        if (e?.status !== 503) setStatus(`Błąd nieba: ${e?.message ?? e}`);
+        if (e?.status !== 503) setStatus(`Sky error: ${e?.message ?? e}`);
       })
       .finally(() => { if (skyAbort === ctrl) skyAbort = null; });
   }
@@ -539,14 +539,14 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
 
   // --- nakładka 2D: HUD geografii + stan ładowania (po polsku) ---
   function loadingLine(sky) {
-    if (!renderer || tilesSeq === 0) return 'Ładowanie obserwatora…';
+    if (!renderer || tilesSeq === 0) return 'Loading observer…';
     if (drawSeq !== obsSeq) {
-      if (tilesSeq !== obsSeq) return 'Ładowanie obserwatora…';
+      if (tilesSeq !== obsSeq) return 'Loading observer…';
       const k = demWin.loaded + albWin.loaded;
       const n = demWin.total + albWin.total;
-      return `Ładowanie kafli terenu ${k}/${n}`;
+      return `Loading terrain tiles ${k}/${n}`;
     }
-    if (!sky || skyObsKey !== terrainKey) return 'Ładowanie nieba…';
+    if (!sky || skyObsKey !== terrainKey) return 'Loading sky…';
     return '';
   }
 

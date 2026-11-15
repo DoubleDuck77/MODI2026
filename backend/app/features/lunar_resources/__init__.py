@@ -5,7 +5,7 @@ from app.features.lunar_resources.facade import LunarResourcesFacade, layer_rout
 
 FEATURE = FeatureModule(
     id="lunar_resources",
-    title="Zasoby geochemiczne Księżyca (radius)",
+    title="Lunar geochemical resources (radius)",
     description="Średnie ważone polem, min/max i różnica względem średniej globalnej 10 zasobów LP-GRS w promieniu R od punktu, liczone przez radius.py i generator.py. Wizualizacja: /sim.html#resources.",
     view=View.SURFACE,
     facade=LunarResourcesFacade,

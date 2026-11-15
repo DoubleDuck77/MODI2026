@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="pl">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MODI 2026 · Symulacje</title>
+  <title>MODI 2026 · Simulations</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/css/main.css">
   <link rel="stylesheet" href="/css/sim.css">
@@ -19,23 +19,23 @@
 </head>
 <body class="sim-page">
   <header class="toolbar">
-    <h1 class="brand">MODI 2026 <span>Symulacje</span></h1>
-    <nav class="mode-switch" aria-label="Tryb symulacji">
-      <button id="mode-surface" type="button" data-mode="surface" aria-pressed="false">Powierzchnia</button>
-      <button id="mode-orbit" type="button" data-mode="orbit" aria-pressed="false">Orbita <small>neworb</small></button>
-      <button id="mode-resources" type="button" data-mode="resources" aria-pressed="false">Zasoby <small>radius</small></button>
+    <h1 class="brand">MODI 2026 <span>Simulations</span></h1>
+    <nav class="mode-switch" aria-label="Simulation mode">
+      <button id="mode-surface" type="button" data-mode="surface" aria-pressed="false">Surface</button>
+      <button id="mode-orbit" type="button" data-mode="orbit" aria-pressed="false">Orbit <small>neworb</small></button>
+      <button id="mode-resources" type="button" data-mode="resources" aria-pressed="false">Resources <small>radius</small></button>
     </nav>
     <div class="controls">
       <button id="sim-play-btn" type="button" aria-pressed="false">▶ Play</button>
-      <label>Czas UTC <input id="sim-time-input" type="datetime-local" step="60"></label>
-      <a class="back-link" href="/">← Strona główna</a>
+      <label>UTC time <input id="sim-time-input" type="datetime-local" step="60"></label>
+      <a class="back-link" href="/">← Home</a>
     </div>
   </header>
 
   <main class="sim-viewport">
-    <section id="mode-surface-root" class="sim-mode" data-mode="surface" hidden aria-label="Widok z powierzchni Księżyca"></section>
-    <section id="mode-orbit-root" class="sim-mode" data-mode="orbit" hidden aria-label="Symulator orbit"></section>
-    <section id="mode-resources-root" class="sim-mode" data-mode="resources" hidden aria-label="Zasoby Księżyca w promieniu R"></section>
+    <section id="mode-surface-root" class="sim-mode" data-mode="surface" hidden aria-label="View from the lunar surface"></section>
+    <section id="mode-orbit-root" class="sim-mode" data-mode="orbit" hidden aria-label="Orbit simulator"></section>
+    <section id="mode-resources-root" class="sim-mode" data-mode="resources" hidden aria-label="Lunar resources within radius R"></section>
     <p id="sim-error" class="sim-error" hidden></p>
   </main>
 

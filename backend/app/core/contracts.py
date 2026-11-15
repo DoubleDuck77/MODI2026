@@ -115,7 +115,7 @@ def _to_utc_in_range(v: datetime) -> datetime:
     v = v.replace(tzinfo=timezone.utc) if v.tzinfo is None else v.astimezone(timezone.utc)
     if not DATA_START <= v <= DATA_END:
         raise ValueError(
-            f"czas {v.isoformat()} poza zakresem danych "
+            f"time {v.isoformat()} is outside the data range "
             f"[{DATA_START.isoformat()}, {DATA_END.isoformat()}]"
         )
     return v
@@ -156,9 +156,9 @@ class RangeQuery(BaseModel):
     @model_validator(mode="after")
     def _check_range(self) -> "RangeQuery":
         if self.end <= self.start:
-            raise ValueError("end musi być późniejszy niż start")
+            raise ValueError("end must be later than start")
         if self.point_count > MAX_SERIES_POINTS:
-            raise ValueError(f"zakres daje {self.point_count} punktów, maksimum to {MAX_SERIES_POINTS}")
+            raise ValueError(f"range gives {self.point_count} points, the maximum is {MAX_SERIES_POINTS}")
         return self
 
 

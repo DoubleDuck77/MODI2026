@@ -11,7 +11,7 @@ from app.features.lunar_orbit.facade import LunarOrbitFacade
 
 FEATURE = FeatureModule(
     id="lunar_orbit",
-    title="Symulator orbit wokół Księżyca (neworb)",
+    title="Lunar orbit simulator (neworb)",
     description="RK4 + J2/C22/J3/J4 + 14 masconów + Ziemia i Słońce, liczone przez neworb.py. Wizualizacja: /sim.html#orbit.",
     view=View.SPACE,
     facade=LunarOrbitFacade,

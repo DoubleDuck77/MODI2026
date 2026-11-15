@@ -13,7 +13,7 @@ export class Inspector {
     const entry = this.#entry(key);
     entry.details.classList.remove('is-error');
     entry.status.textContent = payload?.meta?.source ?? 'ok';
-    entry.status.title = `Ostatnia aktualizacja: ${new Date().toLocaleTimeString()}`;
+    entry.status.title = `Last updated: ${new Date().toLocaleTimeString('en-GB')}`;
     entry.pending = payload;
     if (entry.details.open) this.#render(entry);
   }
@@ -21,7 +21,7 @@ export class Inspector {
   error(key, message) {
     const entry = this.#entry(key);
     entry.details.classList.add('is-error');
-    entry.status.textContent = 'błąd';
+    entry.status.textContent = 'error';
     entry.pending = null;
     entry.pre.textContent = message;
   }
@@ -29,7 +29,7 @@ export class Inspector {
   #render(entry) {
     if (entry.pending == null) return;
     let text = JSON.stringify(entry.pending, null, 2);
-    if (text.length > MAX_CHARS) text = `${text.slice(0, MAX_CHARS)}\n… (ucięte)`;
+    if (text.length > MAX_CHARS) text = `${text.slice(0, MAX_CHARS)}\n… (truncated)`;
     entry.pre.textContent = text;
     entry.pending = null;
   }

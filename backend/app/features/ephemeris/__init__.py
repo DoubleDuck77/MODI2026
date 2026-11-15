@@ -5,7 +5,7 @@ from app.features.ephemeris.facade import EphemerisFacade
 
 FEATURE = FeatureModule(
     id="ephemeris",
-    title="Efemerydy i korelacja Ziemia–Księżyc–Słońce",
+    title="Ephemerides: Earth–Moon–Sun geometry",
     description="Geocentryczne położenia Słońca i Księżyca, odległości, faza Księżyca i Ziemi.",
     view=View.SPACE,
     facade=EphemerisFacade,

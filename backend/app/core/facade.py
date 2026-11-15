@@ -41,5 +41,5 @@ class BaseFacade:
         try:
             raw = _read_bytes(path)
         except FileNotFoundError:
-            raise ExampleNotFoundError(f"Brak przykładu kontraktu: {path}") from None
+            raise ExampleNotFoundError(f"Contract example not found: {path}") from None
         return model.model_validate_json(raw)

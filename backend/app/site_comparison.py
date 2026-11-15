@@ -27,6 +27,30 @@ from app.settings import Settings
 
 __all__ = ["build_site_comparison_router"]
 
+# Komunikaty błędów root-skryptów (elevation/energy_plot_generator.py, linear_interpolation_position.py)
+# tłumaczone na granicy API — skrypty zostają bez zmian, strona pokazuje tekst po angielsku.
+SCRIPT_ERRORS_EN = (
+    ("Nieoczekiwany status HTTP: ", "Unexpected HTTP status: "),
+    ("Niekompletna odpowiedź z NASA PDS (", "Incomplete response from NASA PDS ("),
+    ("Nieprawidłowy rozmiar pliku ", "Invalid size of file "),
+    ("Niekompletna lista próbek z USGS Astrogeology.", "Incomplete sample list from USGS Astrogeology."),
+    ("DATA_KONIEC nie może być wcześniejsza niż DATA_POCZATEK.", "The end date cannot be earlier than the start date."),
+    ("Brak pliku z danymi: ", "Data file not found: "),
+    (" (czas lokalny po przeliczeniu na UTC wymaga roku ", " (the local time converted to UTC needs year "),
+    ("Dostępne pliki w ", "Available files in "),
+    ("Nie znaleziono rekordów ", "No records found for "),
+    ("Nie znaleziono rekordu ", "No record found for "),
+    (" w folderze ", " in folder "),
+    (" w pliku ", " in file "),
+    ("Brak pliku: ", "File not found: "),
+)
+
+
+def script_error_en(msg: str) -> str:
+    for pl, en in SCRIPT_ERRORS_EN:
+        msg = msg.replace(pl, en)
+    return msg
+
 
 class WykresyRequest(BaseModel):
     liczba_wykresow: int = 2
@@ -64,10 +88,10 @@ def build_site_comparison_router(settings: Settings) -> APIRouter:
         if utc_offset:
             return utc_offset.strip()
         if not kraj:
-            raise ValueError("Nie podano strefy czasowej (ani przesunięcia UTC, ani kraju).")
+            raise ValueError("No time zone given (neither a UTC offset nor a country).")
         strefa = tz_conv.define_IANA_zone(kraj, region)
         if strefa.startswith("Błąd"):
-            raise ValueError(f"{strefa} dla kraju '{kraj}'.")
+            raise ValueError(f"Choose a valid region for country '{kraj}'.")
         return strefa
 
     def oblicz_dla_lokalizacji(lat_deg, lon_deg, metric, data_poczatek, data_koniec, utc_offset, kraj, region) -> dict:
@@ -150,7 +174,7 @@ def build_site_comparison_router(settings: Settings) -> APIRouter:
                     "energia_skumulowana_j_m2": [w[kol_eng] for w in tabela],
                 }
 
-            raise ValueError(f"Nieznany typ wykresu: {metric}")
+            raise ValueError(f"Unknown chart type: {metric}")
         finally:
             if uzyto_tymczasowego:
                 tz_conv.kraje_i_strefy_iana.pop(tymczasowy_klucz, None)
@@ -181,12 +205,12 @@ def build_site_comparison_router(settings: Settings) -> APIRouter:
         except Exception as exc:
             traceback.print_exc()
             lata = dostepne_lata_csv()
-            msg = str(exc)
+            msg = script_error_en(str(exc))
             if ("2025" in msg or "2027" in msg) and lata:
                 msg = (
-                    f"{msg} — Pamiętaj, że data lokalna jest przeliczana na UTC "
-                    f"(np. 2026-01-01 00:00 w UTC+1 to 2025-12-31 23:00 UTC). "
-                    f"Dostępne pliki w coords/: {', '.join(lata)}."
+                    f"{msg} — Note that the local date is converted to UTC "
+                    f"(e.g. 2026-01-01 00:00 at UTC+1 is 2025-12-31 23:00 UTC). "
+                    f"Available files in coords/: {', '.join(lata)}."
                 )
             return JSONResponse(status_code=400, content={"error": msg})
 

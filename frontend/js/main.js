@@ -18,7 +18,7 @@ async function bootstrap() {
   try {
     manifest = await api.manifest();
   } catch (err) {
-    inspector.error('manifest', `Brak połączenia z API: ${err?.message ?? err}`);
+    inspector.error('manifest', `Can't reach the API: ${err?.message ?? err}`);
     return;
   }
 

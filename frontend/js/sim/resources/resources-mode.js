@@ -58,7 +58,7 @@ export async function createResourcesMode({ root, api, endpoint }) {
       </div>
     </div>
     <div class="res-right"><canvas class="res-charts"></canvas></div>
-    <div class="res-loading" hidden>Przygotowywanie map zasobów (NASA PDS)…</div>`;
+    <div class="res-loading" hidden>Preparing resource maps (NASA PDS)…</div>`;
   const $ = (sel) => root.querySelector(sel);
   const mapCv = $('.res-map');
   const chartCv = $('.res-charts');
@@ -161,7 +161,7 @@ export async function createResourcesMode({ root, api, endpoint }) {
     } catch (err) {
       if (err?.name === 'AbortError' || mine !== gen) return;
       console.error(err);
-      statusEl.textContent = `Błąd: ${err?.message ?? err}`;
+      statusEl.textContent = `Error: ${err?.message ?? err}`;
       statusEl.classList.add('res-error');
     }
   }

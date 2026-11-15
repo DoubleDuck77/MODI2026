@@ -42,7 +42,7 @@ export function bindControls({ clock, observer, scene }) {
   slider.addEventListener('input', () => clock.seek(Number(slider.value)));
 
   const renderPlay = () => {
-    playBtn.textContent = clock.playing ? '❚❚ Pauza' : '▶ Play';
+    playBtn.textContent = clock.playing ? '❚❚ Pause' : '▶ Play';
     playBtn.setAttribute('aria-pressed', String(clock.playing));
   };
   playBtn.addEventListener('click', () => clock.toggle());

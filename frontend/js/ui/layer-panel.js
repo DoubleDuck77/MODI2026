@@ -1,6 +1,6 @@
 // Panel warstw: checkbox na warstwę, pogrupowane po widoku.
 
-const VIEW_LABELS = { space: 'Kosmos', surface: 'Powierzchnia Księżyca' };
+const VIEW_LABELS = { space: 'Space', surface: 'Lunar surface' };
 
 export function renderLayerPanel(root, layers, onChange = () => {}) {
   root.replaceChildren();

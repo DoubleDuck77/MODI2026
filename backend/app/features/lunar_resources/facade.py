@@ -80,7 +80,9 @@ class LunarResourcesFacade(BaseFacade):
             gen, rad, st = self.gen, self.rad, self.ctx.settings
             missing = sorted(n for n in gen.PDS_FILE_CATALOG if not (st.pds_data_dir / n).is_file())
             if missing:
-                raise RuntimeError(f"Brak plików PDS w {st.pds_data_dir}: {', '.join(missing)}")
+                raise RuntimeError(f"PDS files missing in {st.pds_data_dir}: {', '.join(missing)}")
+            if not (st.textures_dir / BASE_IMAGE).exists():
+                raise FileNotFoundError(f"Base image not found: {st.textures_dir / BASE_IMAGE}")
             gray, w, h = gen.load_base_albedo(st.textures_dir / BASE_IMAGE)
             resources = gen.collect_resource_grids(st.pds_data_dir, gray)
             analyzer = rad.LunarDepositAnalyzer(resources, w, h)
@@ -113,10 +115,10 @@ class LunarResourcesFacade(BaseFacade):
 
     def _require(self) -> None:
         if not self._ready.is_set():
-            raise HTTPException(503, "lunar_resources: trwa budowa danych, spróbuj za chwilę",
+            raise HTTPException(503, "lunar_resources: data is still being built, try again shortly",
                                 headers={"Retry-After": RETRY_AFTER_S})
         if self._error:
-            raise HTTPException(503, f"lunar_resources niedostępne: {self._error}")
+            raise HTTPException(503, f"lunar_resources unavailable: {self._error}")
 
     def _meta(self, endpoint: str) -> ResponseMeta:
         return ResponseMeta(
@@ -182,7 +184,7 @@ class LunarResourcesFacade(BaseFacade):
         self._require()
         data = self._png.get(key)
         if data is None:
-            raise HTTPException(404, f"Nieznana warstwa: {key}")
+            raise HTTPException(404, f"Unknown layer: {key}")
         return data
 
 

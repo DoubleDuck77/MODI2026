@@ -11,6 +11,10 @@ services:
       - ./geografia.py:/srv/geografia.py:ro
       - ./radius.py:/srv/radius.py:ro
       - ./generator.py:/srv/generator.py:ro
+      - ./elevation_plot_generator.py:/srv/elevation_plot_generator.py:ro
+      - ./energy_plot_generator.py:/srv/energy_plot_generator.py:ro
+      - ./time_zone_converter.py:/srv/time_zone_converter.py:ro
+      - ./linear_interpolation_position.py:/srv/linear_interpolation_position.py:ro
       - ./Textures:/data/textures:ro
       - ./coords:/data/coords:ro
       - ./lunar_pds_data:/data/pds:ro

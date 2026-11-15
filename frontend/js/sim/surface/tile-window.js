@@ -42,7 +42,7 @@ async function fetchTile(url, signal, byteLength) {
   const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`);
   const buf = await res.arrayBuffer();
-  if (buf.byteLength !== byteLength) throw new Error(`Kafel ${url}: ${buf.byteLength} B zamiast ${byteLength} B`);
+  if (buf.byteLength !== byteLength) throw new Error(`Tile ${url}: got ${buf.byteLength} B, expected ${byteLength} B`);
   cachePut(url, buf);
   return buf;
 }

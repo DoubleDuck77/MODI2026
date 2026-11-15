@@ -5,7 +5,7 @@ from app.features.moon_illumination.facade import MoonIlluminationFacade
 
 FEATURE = FeatureModule(
     id="moon_illumination",
-    title="Oświetlenie i cienie Księżyca",
+    title="Lunar illumination and shadows",
     description="Kierunek Słońca w układzie Księżyca, terminator, libracja i cienie obiektów.",
     view=View.SPACE,
     facade=MoonIlluminationFacade,

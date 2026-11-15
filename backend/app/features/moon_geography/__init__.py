@@ -5,7 +5,7 @@ from app.features.moon_geography.facade import MoonGeographyFacade
 
 FEATURE = FeatureModule(
     id="moon_geography",
-    title="Geografia Księżyca: kratery, góry, morza",
+    title="Lunar geography: craters, mountains, maria",
     description="Katalog obiektów powierzchni i opis terenu (tekstury, mapa wysokości).",
     view=View.SPACE,
     facade=MoonGeographyFacade,

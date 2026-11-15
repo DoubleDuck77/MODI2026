@@ -48,7 +48,7 @@ export class SceneContext {
   get activeView() { return this._activeView; }
 
   setView(name) {
-    if (!(name in this.views)) throw new Error(`Nieznany widok: ${name}`);
+    if (!(name in this.views)) throw new Error(`Unknown view: ${name}`);
     this._activeView = name;
     for (const [n, group] of Object.entries(this.views)) group.visible = n === name;
     const preset = VIEW_PRESETS[name];

@@ -48,7 +48,7 @@ async function loadLevels(url) {
   const img = await new Promise((resolve, reject) => {
     const im = new Image();
     im.onload = () => resolve(im);
-    im.onerror = () => reject(new Error(`Nie udało się wczytać ${url}`));
+    im.onerror = () => reject(new Error(`Failed to load ${url}`));
     im.src = url;
   });
   let w = img.width;

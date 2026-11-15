@@ -5,7 +5,7 @@ from app.features.line_of_sight.facade import LineOfSightFacade
 
 FEATURE = FeatureModule(
     id="line_of_sight",
-    title="Line-of-sight do Ziemi",
+    title="Line of sight to Earth",
     description="Widoczność Ziemi z punktu na Księżycu z uwzględnieniem terenu i okna widoczności w czasie.",
     view=View.SURFACE,
     facade=LineOfSightFacade,

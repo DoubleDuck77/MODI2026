@@ -5,7 +5,7 @@ from app.features.lagrange.facade import LagrangeFacade
 
 FEATURE = FeatureModule(
     id="lagrange",
-    title="Punkty Lagrange'a Ziemia–Księżyc",
+    title="Earth–Moon Lagrange points",
     description="Położenia L1–L5 w ekliptyce i w układzie rotującym, ze stabilnością.",
     view=View.SPACE,
     facade=LagrangeFacade,

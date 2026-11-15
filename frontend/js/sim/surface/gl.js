@@ -7,7 +7,7 @@ function compile(gl, type, src) {
   if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS) && !gl.isContextLost()) {
     const log = gl.getShaderInfoLog(sh);
     gl.deleteShader(sh);
-    throw new Error(`Błąd kompilacji shadera (${type === gl.VERTEX_SHADER ? 'VS' : 'FS'}):\n${log}`);
+    throw new Error(`Shader compile error (${type === gl.VERTEX_SHADER ? 'VS' : 'FS'}):\n${log}`);
   }
   return sh;
 }
@@ -29,7 +29,7 @@ export function createProgram(gl, vsSrc, fsSrc) {
   if (!gl.getProgramParameter(program, gl.LINK_STATUS) && !gl.isContextLost()) {
     const log = gl.getProgramInfoLog(program);
     gl.deleteProgram(program);
-    throw new Error(`Błąd linkowania programu:\n${log}`);
+    throw new Error(`Program link error:\n${log}`);
   }
   const u = {};
   const nu = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS) ?? 0;

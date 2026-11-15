@@ -83,13 +83,13 @@ class LunarSurfaceFacade(BaseFacade):
                 tex = self.ctx.settings.textures_dir
                 dem_path, color_path = tex / DEM_FILE, tex / COLOR_FILE
                 if not (dem_path.is_file() and color_path.is_file()):
-                    raise HTTPException(503, f"Brak map terenu v3 ({DEM_FILE}, {COLOR_FILE}) w {tex}")
+                    raise HTTPException(503, f"Terrain maps v3 ({DEM_FILE}, {COLOR_FILE}) not found in {tex}")
                 dem = np.load(dem_path, mmap_mode="r")
                 color = np.load(color_path, mmap_mode="r")
                 if dem.ndim != 2 or dem.shape[0] % DEM_TILE or dem.shape[1] % DEM_TILE:
-                    raise HTTPException(503, f"DEM {dem.shape} nie dzieli się na kafle {DEM_TILE} px")
+                    raise HTTPException(503, f"DEM {dem.shape} does not split into {DEM_TILE} px tiles")
                 if color.ndim != 3 or color.shape[2] != 3 or color.shape[0] % ALBEDO_TILE or color.shape[1] % ALBEDO_TILE:
-                    raise HTTPException(503, f"Albedo {color.shape} nie dzieli się na kafle {ALBEDO_TILE} px")
+                    raise HTTPException(503, f"Albedo {color.shape} does not split into {ALBEDO_TILE} px tiles")
                 self._terrain_obj = self.geo.LunarTerrain3D(dem, color)
         return self._terrain_obj
 
@@ -163,10 +163,10 @@ class LunarSurfaceFacade(BaseFacade):
         elif layer == "albedo":
             arr, tile, dtype = base.albedo_map, ALBEDO_TILE, None
         else:
-            raise HTTPException(404, f"Nieznana warstwa kafli: {layer}")
+            raise HTTPException(404, f"Unknown tile layer: {layer}")
         ny, nx = arr.shape[0] // tile, arr.shape[1] // tile
         if not (0 <= ty < ny and 0 <= tx < nx):
-            raise HTTPException(404, f"Kafel {ty}/{tx} poza zakresem {ny}×{nx}")
+            raise HTTPException(404, f"Tile {ty}/{tx} is outside the {ny}×{nx} grid")
         block = arr[ty * tile:(ty + 1) * tile, tx * tile:(tx + 1) * tile]
         if dtype is None:   # albedo: uint8 RGB (albedo_is_u8); inaczej skala jak w _init_gpu
             if base.albedo_is_u8:

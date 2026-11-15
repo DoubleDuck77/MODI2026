@@ -36,7 +36,7 @@ function bindHeader(clock) {
     if (Number.isFinite(ms)) clock.seek(ms);
   });
   const renderPlay = () => {
-    playBtn.textContent = clock.playing ? '❚❚ Pauza' : '▶ Play';
+    playBtn.textContent = clock.playing ? '❚❚ Pause' : '▶ Play';
     playBtn.setAttribute('aria-pressed', String(clock.playing));
   };
   playBtn.addEventListener('click', () => clock.toggle());
@@ -50,13 +50,13 @@ async function bootstrap() {
   try {
     manifest = await api.manifest();
   } catch (err) {
-    showError(`Brak połączenia z API: ${err?.message ?? err}`);
+    showError(`Can't reach the API: ${err?.message ?? err}`);
     return;
   }
   const paths = new Map(manifest.features.flatMap((f) => f.endpoints.map((ep) => [ep.key, ep.path])));
   const endpoint = (key) => {
     const path = paths.get(key);
-    if (!path) throw new Error(`Brak endpointu ${key} w manifeście`);
+    if (!path) throw new Error(`Endpoint ${key} is missing from the manifest`);
     return path;
   };
 
@@ -86,7 +86,7 @@ async function bootstrap() {
       if (active === name) instances.get(name).activate();
     } catch (err) {
       console.error(err);
-      showError(`Nie udało się uruchomić trybu ${name}: ${err?.message ?? err}`);
+      showError(`Couldn't start ${name} mode: ${err?.message ?? err}`);
     }
   }
 

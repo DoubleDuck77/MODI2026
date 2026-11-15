@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="pl">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MODI 2026 · Ziemia–Księżyc</title>
+  <title>MODI 2026 · Earth–Moon</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/css/main.css">
   <script type="importmap">
@@ -17,40 +17,40 @@
 </head>
 <body>
   <header class="toolbar">
-    <h1 class="brand">MODI 2026 <span>Ziemia–Księżyc</span></h1>
-    <a class="sim-link" href="/sim.html">Symulacje →</a>
+    <h1 class="brand">MODI 2026 <span>Earth–Moon</span></h1>
+    <a class="sim-link" href="/sim.html">Simulations →</a>
     <div class="controls">
       <button id="play-btn" type="button" aria-pressed="false">▶ Play</button>
-      <label>Czas UTC <input id="time-input" type="datetime-local" step="3600"></label>
-      <label>Prędkość
+      <label>UTC time <input id="time-input" type="datetime-local" step="3600"></label>
+      <label>Speed
         <select id="speed-select">
           <option value="1">1 h/s</option>
-          <option value="24">1 dzień/s</option>
-          <option value="168">1 tydzień/s</option>
-          <option value="720">1 miesiąc/s</option>
+          <option value="24">1 day/s</option>
+          <option value="168">1 week/s</option>
+          <option value="720">1 month/s</option>
         </select>
       </label>
-      <label>Widok
+      <label>View
         <select id="view-select">
-          <option value="space">Kosmos</option>
-          <option value="surface">Powierzchnia Księżyca</option>
+          <option value="space">Space</option>
+          <option value="surface">Lunar surface</option>
         </select>
       </label>
-      <label>Szer. <input id="lat-input" type="number" min="-90" max="90" step="0.1"></label>
-      <label>Dł. <input id="lon-input" type="number" min="-180" max="180" step="0.1"></label>
+      <label>Lat <input id="lat-input" type="number" min="-90" max="90" step="0.1"></label>
+      <label>Lon <input id="lon-input" type="number" min="-180" max="180" step="0.1"></label>
     </div>
-    <input id="time-slider" type="range" aria-label="Oś czasu 2000–2100">
+    <input id="time-slider" type="range" aria-label="Timeline 2000–2100">
   </header>
 
-  <main id="viewport" aria-label="Scena 3D"></main>
+  <main id="viewport" aria-label="3D scene"></main>
 
   <aside class="sidebar">
     <section>
-      <h2>Warstwy</h2>
+      <h2>Layers</h2>
       <div id="layer-panel"></div>
     </section>
     <section>
-      <h2>Inspektor kontraktów</h2>
+      <h2>Contract inspector</h2>
       <div id="inspector"></div>
     </section>
   </aside>

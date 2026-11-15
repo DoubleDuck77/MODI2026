@@ -12,7 +12,7 @@ from app.features.lunar_surface.facade import LunarSurfaceFacade, tile_routes
 
 FEATURE = FeatureModule(
     id="lunar_surface",
-    title="Widok z powierzchni Księżyca (geografia)",
+    title="View from the lunar surface (geografia)",
     description="Geometria obserwatora, niebo (Ziemia, Słońce, zaćmienia) i kafle DEM/albedo LOLA, liczone przez geografia.py; teren rysuje WebGL2 w przeglądarce. Wizualizacja: /sim.html#surface.",
     view=View.SURFACE,
     facade=LunarSurfaceFacade,

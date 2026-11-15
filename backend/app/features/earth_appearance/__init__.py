@@ -5,7 +5,7 @@ from app.features.earth_appearance.facade import EarthAppearanceFacade
 
 FEATURE = FeatureModule(
     id="earth_appearance",
-    title="Wygląd Ziemi: rotacja, chmury, światła miast",
+    title="Earth appearance: rotation, clouds, city lights",
     description="Obrót Ziemi, warstwa chmur z własną prędkością, terminator i światła miast po stronie nocnej.",
     view=View.SPACE,
     facade=EarthAppearanceFacade,

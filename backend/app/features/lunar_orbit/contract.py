@@ -51,7 +51,7 @@ class OrbitPropagateQuery(TimeQuery):
     def _limit(self) -> "OrbitPropagateQuery":
         n = math.ceil(self.duration_s / self.sample_dt_s) + 1
         if n > MAX_SERIES_POINTS:
-            raise ValueError(f"zakres daje {n} próbek, maksimum to {MAX_SERIES_POINTS}")
+            raise ValueError(f"range gives {n} samples, the maximum is {MAX_SERIES_POINTS}")
         return self
 
 

@@ -5,7 +5,7 @@ from app.features.horizon.facade import HorizonFacade
 
 FEATURE = FeatureModule(
     id="horizon",
-    title="Horyzont obserwatora na Księżycu",
+    title="Observer horizon on the Moon",
     description="Profil horyzontu terenowego oraz Ziemia i Słońce na niebie obserwatora.",
     view=View.SURFACE,
     facade=HorizonFacade,
