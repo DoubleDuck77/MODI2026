@@ -2540,6 +2540,64 @@ class Slider:
         screen.blit(txt, (self.rect.x, self.rect.y - 20))
 
 
+class CoordInputBox:
+    def __init__(self, x, y, w, h, slider):
+        self.rect = pygame.Rect(x, y, w, h)
+        self.slider = slider
+        self.active = False
+        self.text = ""
+
+    def _commit(self):
+        try:
+            v = float(self.text.replace(",", ".").strip())
+            self.slider.val = max(self.slider.min_val, min(self.slider.max_val, v))
+            self.active = False
+            return True
+        except ValueError:
+            self.active = False
+            return False
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.rect.collidepoint(event.pos):
+                if not self.active:
+                    self.active = True
+                    self.text = f"{self.slider.val:.2f}"
+                return "consumed"
+            elif self.active:
+                return "committed" if self._commit() else False
+        elif event.type == pygame.KEYDOWN and self.active:
+            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                return "committed" if self._commit() else "consumed"
+            elif event.key == pygame.K_ESCAPE:
+                self.active = False
+                return "consumed"
+            elif event.key == pygame.K_BACKSPACE:
+                if event.mod & pygame.KMOD_CTRL:
+                    self.text = ""
+                else:
+                    self.text = self.text[:-1]
+                return "consumed"
+            elif event.key == pygame.K_DELETE or (event.key == pygame.K_a and (event.mod & pygame.KMOD_CTRL)):
+                self.text = ""
+                return "consumed"
+            elif event.unicode and event.unicode in "0123456789.-+,":
+                if len(self.text) < 10:
+                    self.text += event.unicode
+                return "consumed"
+            return "consumed"
+        return False
+
+    def draw(self, screen, font):
+        bg = (45, 58, 78) if self.active else (32, 38, 48)
+        border = (110, 180, 255) if self.active else (80, 95, 115)
+        pygame.draw.rect(screen, bg, self.rect, border_radius=4)
+        pygame.draw.rect(screen, border, self.rect, width=1, border_radius=4)
+        disp = f"{self.text}|" if self.active else f"{self.slider.val:+.2f}°"
+        txt = font.render(disp, True, (240, 245, 255) if self.active else (200, 210, 225))
+        screen.blit(txt, (self.rect.x + 6, self.rect.y + (self.rect.height - txt.get_height()) // 2))
+
+
 def format_height_m(height_m: float) -> str:
     if height_m < 1000.0:
         return f"{height_m:.1f} m"
@@ -2555,14 +2613,13 @@ def main():
     screen = pygame.display.set_mode((W, H), pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE)
     gl = GL33()
 
-    pygame.display.set_caption("Lunar Stellarium - GPU PQS Engine & Telescopic Zoom")
+    pygame.display.set_caption("Lunar Stellarium")
     clock = pygame.time.Clock()
     font = pygame.font.SysFont("Consolas", 15)
     font_big = pygame.font.SysFont("Consolas", 18, bold=True)
 
-    dem_km, albedo_rgb, dem_source = load_or_download_lunar_maps()
+    dem_km, albedo_rgb, _ = load_or_download_lunar_maps()
     terrain_3d = LunarTerrain3D(dem_km, albedo_rgb, gl=gl)
-    wireframe_mode = False
     show_horizon_line = True
 
     earth_day_arr, earth_night_mips, earth_clouds_arr = load_earth_textures()
@@ -2580,8 +2637,6 @@ def main():
     playing = False
     play_speed = 24.0
     anim_time = 0.0
-    status_msg = ""
-    status_timer = 0.0
     last_hud_state = None
     hud_frame_skip = 0
 
@@ -2593,6 +2648,8 @@ def main():
     slider_lat = Slider(30, 40, 240, 10, -90.0, 90.0, -43.31, "Latitude (Lat)", "{:+.2f}°")
     slider_lon = Slider(30, 90, 240, 10, -180.0, 180.0, -11.36, "Longitude (Lon)", "{:+.2f}°")
     slider_height = Slider(30, 140, 240, 10, 2.0, 50000.0, 15.0, "Height Above Surface", power=3.0)
+    input_lat = CoordInputBox(285, 32, 92, 24, slider_lat)
+    input_lon = CoordInputBox(285, 82, 92, 24, slider_lon)
     location_name = "Tycho Crater"
 
     # Set safe initial camera altitude above local horizon on startup
@@ -2684,8 +2741,6 @@ def main():
         anim_time += dt
         cw, ch = screen.get_size()
         gl.glViewport(0, 0, cw, ch)
-        if status_timer > 0.0:
-            status_timer = max(0.0, status_timer - dt)
 
         slider_year.rect.y = ch - 45
         slider_time.rect.y = ch - 45
@@ -2696,11 +2751,25 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
 
+            lat_res = input_lat.handle_event(event)
+            if lat_res == "committed":
+                location_name = "Custom Coordinates"
+            if lat_res == "consumed":
+                continue
+
+            lon_res = input_lon.handle_event(event)
+            if lon_res == "committed":
+                location_name = "Custom Coordinates"
+            if lon_res == "consumed":
+                continue
+
             if slider_year.handle_event(event):
                 current_year = int(slider_year.val)
             if slider_time.handle_event(event):
                 continue
             if slider_lat.handle_event(event) or slider_lon.handle_event(event):
+                input_lat.active = False
+                input_lon.active = False
                 location_name = "Custom Coordinates"
                 continue
             if slider_height.handle_event(event):
@@ -2753,15 +2822,11 @@ def main():
                     if abs(cam_alt - hor_alt) < math.radians(1.5):
                         target_fov = math.radians(8.0)
                     cam_alt = hor_alt
-                elif event.key == pygame.K_m:
-                    wireframe_mode = not wireframe_mode
                 elif event.key == pygame.K_h:
                     show_horizon_line = not show_horizon_line
-                elif event.key == pygame.K_c:
-                    terrain_3d.export_horizon_csv("horizon.csv")
-                    status_msg = "Saved horizon profile: horizon.csv"
-                    status_timer = 3.5
                 elif event.key in presets:
+                    input_lat.active = False
+                    input_lon.active = False
                     location_name, slider_lat.val, slider_lon.val, preset_az = presets[event.key]
                     cam_az = math.radians(preset_az)
                     terrain_3d.update_observer(slider_lat.val, slider_lon.val, eye_height_m=slider_height.val)
@@ -2872,13 +2937,13 @@ def main():
                 dark_side_exposure=dark_side_exposure,
             )
 
-        # 5. 3D LUNAR SURFACE MESH (PQS GPU INSTANCING + PER-PIXEL SHADER)
+        # 5. 3D LUNAR SURFACE MESH
         terrain_3d.draw_3d(
             None, cw, ch, cam_alt, cam_az, fov,
             sun_alt, sun_az, earth_alt, earth_az=earth_az,
             sun_effective_vis=sun_effective_vis,
             eclipse_red_glow=eclipse_red_glow,
-            wireframe=wireframe_mode,
+            wireframe=False,
             show_horizon_line=show_horizon_line,
         )
 
@@ -2895,10 +2960,11 @@ def main():
             round(slider_height.val, 1),
             round(terrain_3d.obs_slope_deg, 2),
             current_year,
-            wireframe_mode,
             show_horizon_line,
-            status_timer > 0.0,
-            terrain_3d.drawn_count,
+            input_lat.active,
+            input_lat.text,
+            input_lon.active,
+            input_lon.text,
         )
         hud_frame_skip += 1
         if hud_state != last_hud_state and (not playing or hud_frame_skip >= 2):
@@ -2929,7 +2995,6 @@ def main():
 
             zoom_mag = base_fov / fov
             height_str = format_height_m(slider_height.val)
-            n_tris = terrain_3d.drawn_count * (terrain_3d.PATCH_N * terrain_3d.PATCH_N * 2)
             slope_str = (
                 f"{terrain_3d.obs_slope_deg:.2f}° (Flat)"
                 if terrain_3d.obs_slope_dir == "Flat"
@@ -2949,41 +3014,35 @@ def main():
                 sun_vis = "VISIBLE"
 
             info_lines = [
-                f"Location: {location_name} | DEM: {dem_source} (GPU PQS)",
-                f"Terrain: {terrain_3d.obs_elev_km:+.3f} km | Slope: {slope_str} | Alt: {height_str} | Zoom: {zoom_mag:.1f}x",
-                f"Camera: Az {math.degrees(cam_az):.2f}° | Alt {math.degrees(cam_alt):+.2f}° (Hor: {math.degrees(cam_hor):+.2f}°)",
-                f"GPU Mesh: {terrain_3d.drawn_count} patches ({n_tris:,} triangles) | τ {terrain_3d.lod_tau_used:.1f} px",
+                f"Location: {location_name} ({slider_lat.val:+.2f}°, {slider_lon.val:+.2f}°)",
+                f"Altitude: {height_str} (Terrain: {terrain_3d.obs_elev_km:+.3f} km) | Slope: {slope_str} | Zoom: {zoom_mag:.1f}x",
+                f"Camera: Az {math.degrees(cam_az):.2f}° | Alt {math.degrees(cam_alt):+.2f}° | Horizon Alt: {math.degrees(cam_hor):+.2f}°",
                 "-" * 66,
                 f"EARTH: Alt {math.degrees(earth_alt):+6.2f}° | Az {math.degrees(earth_az):6.2f}° [{earth_vis}]",
                 f"SUN:   Alt {math.degrees(sun_alt):+6.2f}° | Az {math.degrees(sun_az):6.2f}° [{sun_vis}]",
                 "-" * 66,
                 "[Scroll / +/-] Zoom (up to 375x) | [R] Reset Zoom | [Space] Play/Pause",
                 "[E] Earth (2x = zoom) | [S] Sun (2x = zoom) | [L] Level to Horizon",
-                "[M] 3D Wireframe | [H] Horizon Line | [C] Export horizon.csv",
+                "[H] Horizon Line",
                 "[1] Tycho [2] Copernicus [3] Shackleton (Crater)",
                 "[4] Vallis Alpes (Alpine Valley) [5] Apollo 11",
             ]
 
             panel_w = 675
-            extra_h = 24 if status_timer > 0.0 else 0
-            panel_surf = pygame.Surface((panel_w, len(info_lines) * 20 + 16 + extra_h), pygame.SRCALPHA)
+            panel_surf = pygame.Surface((panel_w, len(info_lines) * 20 + 16), pygame.SRCALPHA)
             panel_surf.fill((15, 20, 30, 195))
             hud_surf.blit(panel_surf, (cw - panel_w - 15, 15))
 
             for i, line in enumerate(info_lines):
                 hud_surf.blit(font.render(line, True, (210, 215, 225)), (cw - panel_w - 5, 22 + i * 20))
 
-            if status_timer > 0.0:
-                hud_surf.blit(
-                    font.render(status_msg, True, (120, 235, 150)),
-                    (cw - panel_w - 5, 22 + len(info_lines) * 20 + 4),
-                )
-
             slider_year.draw(hud_surf, font)
             slider_time.draw(hud_surf, font, data["time"].strftime("%Y-%m-%d %H:%M UTC"))
             slider_lat.draw(hud_surf, font)
             slider_lon.draw(hud_surf, font)
             slider_height.draw(hud_surf, font, height_str)
+            input_lat.draw(hud_surf, font)
+            input_lon.draw(hud_surf, font)
             gpu.upload_hud()
 
         gl.glDisable(gl.DEPTH_TEST)
