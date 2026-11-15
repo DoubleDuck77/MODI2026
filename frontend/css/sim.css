@@ -39,12 +39,12 @@ body.sim-page {
   .sim-panel { font-size: 11px; }
 }
 
-/* --- tryb Powierzchnia --- */
+/* --- tryb Powierzchnia (port geografia: teren w WebGL2, napisy na nakładce canvas 2D) --- */
+.sim-mode > canvas.surface-gl, .sim-mode > canvas.surface-overlay { position: absolute; inset: 0; }
+.surface-gl { touch-action: none; }
+.surface-overlay { pointer-events: none; }
 .surface-observer { top: 14px; left: 14px; width: 270px; }
 .surface-time { left: 14px; right: 14px; bottom: 14px; display: grid; grid-template-columns: 260px 1fr; gap: 0 20px; }
-.surface-hud { top: 14px; right: 14px; max-width: calc(100% - 320px); overflow: hidden; font-size: 13px; background: rgba(15, 20, 30, 0.76); }
-.surface-observer .sim-buttons { margin-top: 6px; }
-.surface-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 
 /* --- tryb Orbita (port neworb: Księżyc w WebGL, reszta na canvas 2D) --- */
 .orbit-root canvas { position: absolute; inset: 0; display: block; }

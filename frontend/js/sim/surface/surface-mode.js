@@ -1,230 +1,223 @@
-// Tryb „Powierzchnia” — port newlunar.py: widok z powierzchni Księżyca.
-// Dane: lunar_surface.terrain (siatka terenu + horyzont) i lunar_surface.sky (Ziemia, Słońce, zaćmienia).
-// Sterowanie, suwaki, klawisze i HUD odwzorowują newlunar.main() (newlunar.py:1733-2133).
-import * as THREE from 'three';
-import { Line2 } from 'three/addons/lines/Line2.js';
-import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
-import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+// Tryb „Powierzchnia” — port geografia.py (silnik PQS na GPU) w surowym WebGL2, bez bibliotek 3D.
+// Serwer liczy obserwatora (lunar_surface.observer: grunt, nachylenie, horyzont), niebo
+// (lunar_surface.sky) i wydaje kafle DEM/albedo; teren składa i cieniuje GPU przeglądarki.
+// Kamera, zoom, presety, suwaki lat/lon/wysokość i klawisze +/-/R/M/H/1-5 jak geografia.main()
+// (geografia.py:2549-2770). Niebo, HUD, czas i pozostałe klawisze dochodzą w Tasku 4.
 
-import { buildTerrainMesh, enuToScene } from './terrain-mesh.js';
-import { createSky } from './sky-bodies.js';
+import { makeSlider } from '../ui/slider.js';
+import { TerrainRenderer, TAU_PX } from './terrain-renderer.js';
+import { TileWindow } from './tile-window.js';
 
 const DEG = Math.PI / 180;
 const TWO_PI = 2 * Math.PI;
-const BASE_FOV = 75 * DEG;            // pionowe pole widzenia (focal = (ch/2)/tan(fov/2))
-const MIN_FOV = 0.2 * DEG;
-const MAX_FOV = 115 * DEG;
-const PLAY_SPEED = 24;                // indeksów godzinowych na sekundę (newlunar.py:1759)
-const HOUR_MS = 3_600_000;
+// geografia.py:2570-2576
+const BASE_FOV = 75.0 * DEG;           // pionowe pole widzenia (focal = (ch/2)/tan(fov/2))
+const MIN_FOV = 0.20 * DEG;
+const MAX_FOV = 115.0 * DEG;
 const SKY_MIN_INTERVAL_MS = 200;
-const TERRAIN_DEBOUNCE_MS = 250;
+const OBSERVER_DEBOUNCE_MS = 250;
+const MIN_TEXTURE_SIZE = 8192;         // albedo z pełnym pierścieniem: 32 × 256 px
 
-// newlunar.py:1836-1842
+const MSG_NO_WEBGL2 = 'Tryb Powierzchnia wymaga WebGL2 — ta przeglądarka go nie obsługuje.';
+const MSG_CONTEXT_LOST = 'Utracono kontekst WebGL — odśwież stronę.';
+
+// geografia.py:2673-2679 — (Name, Lat_deg, Lon_deg, Initial_Azimuth_deg)
 const PRESETS = {
-  1: ['Krater Tycho', -43.31, -11.36],
-  2: ['Krater Kopernik', 9.62, -20.08],
-  3: ['Krater Shackleton (Biegun S)', -89.60, 0.00],
-  4: ['Apollo 11 (Mare Tranquillitatis)', 0.67, 23.47],
-  5: ['Mare Orientale', -19.40, -92.80],
+  1: ['Tycho Crater', -43.31, -11.36, 15.0],
+  2: ['Copernicus Crater', 9.62, -20.08, 35.0],
+  3: ['Shackleton (Crater)', -89.48, 129.80, 0.0],
+  4: ['Vallis Alpes (Alpine Valley)', 48.65, 3.50, 56.0],
+  5: ['Apollo 11 (Mare Tranquillitatis)', 0.67, 23.47, 270.0],
 };
 
-const pad = (s, w) => String(s).padStart(w);
 const fixed = (v, d) => (Object.is(v, -0) ? 0 : v).toFixed(d);
-const signed = (v, d, w = 0) => pad((v >= 0 ? '+' : '') + fixed(v, d), w);
-const wrapPi = (a) => ((a + Math.PI) % TWO_PI + TWO_PI) % TWO_PI - Math.PI;
+const signed = (v, d) => (v >= 0 ? '+' : '') + fixed(v, d);
+const mod2pi = (a) => ((a % TWO_PI) + TWO_PI) % TWO_PI;
 
-/** newlunar.format_height_m */
+// geografia.py:2543-2546
+/** geografia.format_height_m */
 export function formatHeightM(m) {
   return m < 1000 ? `${m.toFixed(1)} m` : `${(m / 1000).toFixed(2)} km`;
 }
 
-const yearStartMs = (y) => Date.UTC(y, 0, 1);
-/** Liczba wierszy coords/<rok>.csv: godziny roku; 2100.csv ma jeden wiersz. */
-const yearRows = (y) => (y >= 2100 ? 1 : (yearStartMs(y + 1) - yearStartMs(y)) / HOUR_MS);
-const fmtUtc = (ms) => new Date(ms).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
-
-/** Suwak DOM o semantyce newlunar.Slider (wartość = min + ratio^power · (max − min)). */
-function makeSlider(parent, { label, min, max, value, power = 1, isInt = false, format }) {
-  const wrap = document.createElement('label');
-  wrap.className = 'sim-slider';
-  const text = document.createElement('span');
-  const input = document.createElement('input');
-  input.type = 'range';
-  input.min = '0';
-  input.max = '1';
-  input.step = 'any';
-  wrap.append(text, input);
-  parent.append(wrap);
-  const s = {
-    min, max, power, isInt, value, label, format, el: wrap, input,
-    toRatio(v) {
-      return s.max > s.min ? Math.max(0, Math.min(1, (v - s.min) / (s.max - s.min))) ** (1 / s.power) : 0;
+/** Komunikaty w #sim-error: widoczne tylko, gdy tryb Powierzchnia jest aktywny. */
+function pageError() {
+  const el = () => document.getElementById('sim-error');
+  return {
+    show(msg) {
+      const e = el();
+      if (!e || !msg) return;
+      e.textContent = msg;
+      e.hidden = false;
     },
-    set(v, custom) {
-      s.value = v;
-      input.value = String(s.toRatio(v));
-      s.render(custom);
+    hide(msg) {
+      const e = el();
+      if (e && e.textContent === msg) e.hidden = true;
     },
-    render(custom) {
-      const str = custom ?? (s.isInt ? String(Math.trunc(s.value)) : s.format(s.value));
-      text.textContent = `${s.label}: ${str}`;
-    },
-    onInput: null,
   };
-  // Suwak nie zatrzymuje fokusu (w pygame suwaki nie przejmują klawiatury): po puszczeniu
-  // myszy skróty (spacja, 1–5, E, S…) działają od razu.
-  input.addEventListener('change', () => input.blur());
-  input.addEventListener('pointerup', () => input.blur());
-  input.addEventListener('input', () => {
-    const v = s.min + Number(input.value) ** s.power * (s.max - s.min);
-    s.value = s.isInt ? Math.round(v) : v;
-    s.render();
-    s.onInput?.(s.value);
-  });
-  s.set(value);
-  return s;
+}
+
+/** Tryb zastępczy, gdy nie ma WebGL2 albo GPU ma za małe tekstury: tylko komunikat. */
+function errorMode(root, message) {
+  root.innerHTML = '';
+  const err = pageError();
+  return {
+    activate() { err.show(message); },
+    deactivate() { err.hide(message); },
+  };
 }
 
 export function createSurfaceMode({ root, api, endpoint, clock }) {
   root.innerHTML = '';
-  const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setClearColor(0x05070c);  // (5, 7, 12) jak screen.fill w newlunar
-  root.append(renderer.domElement);
+  const canvas = document.createElement('canvas');
+  canvas.className = 'surface-gl';
+  // geografia.py:2550-2558: kontekst GL 3.3 core bez atrybutów multisample → antialias: false
+  const gl = canvas.getContext('webgl2', { depth: true, alpha: false, antialias: false });
+  if (!gl) return errorMode(root, MSG_NO_WEBGL2);
+  const maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+  if (!(maxTex >= MIN_TEXTURE_SIZE)) {
+    return errorMode(root, `GPU obsługuje tekstury do ${maxTex} px, teren wymaga ${MIN_TEXTURE_SIZE} px.`);
+  }
+  const overlay = document.createElement('canvas');
+  overlay.className = 'surface-overlay';
+  const ctx2d = overlay.getContext('2d');
+  root.append(canvas, overlay);
 
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(BASE_FOV / DEG, 1, 0.0005, 20000);
-  camera.position.set(0, 0, 0);
-  const sky = createSky(scene, renderer);
-  api.getJson(endpoint('lunar_surface.stars'), {}, { cache: true })
-    .then((f) => sky.setStars(f))
-    .catch((err) => setStatus(`Błąd gwiazd: ${err?.message ?? err}`));
+  const err = pageError();
+  let active = false;
+  let fatalMsg = '';
+  let contextLost = false;
+  const fatal = (msg) => {
+    fatalMsg = msg;
+    if (active) err.show(msg);
+  };
+  canvas.addEventListener('webglcontextlost', () => {
+    contextLost = true;
+    fatal(MSG_CONTEXT_LOST);
+  });
 
-  // --- stan (newlunar.py:1746-1772) ---
-  let camAz = 0;
-  let camAlt = 15 * DEG;
+  // --- stan (geografia.py:2565-2576, 2596) ---
+  let camAz = 15.0 * DEG;
+  let camAlt = 14.0 * DEG;
   let fov = BASE_FOV;
   let targetFov = BASE_FOV;
   let wireframe = false;
   let showHorizonLine = true;
-  let locationName = 'Krater Tycho';
+  let locationName = 'Tycho Crater';
+  let pendingPreset = null;   // azymut presetu do ustawienia po odpowiedzi observer
   let statusMsg = '';
   let statusTimer = 0;
-  let animTime = 0;
-  let animFrozen = false;   // tylko debug: stały czas animacji chmur do porównań z pygame
 
-  // --- panele DOM ---
-  const topLeft = document.createElement('div');
-  topLeft.className = 'sim-panel surface-observer';
-  const bottom = document.createElement('div');
-  bottom.className = 'sim-panel surface-time';
-  const presetBar = document.createElement('div');
-  presetBar.className = 'sim-buttons';
-  for (const [key, [name]] of Object.entries(PRESETS)) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = `${key}. ${name}`;
-    b.addEventListener('click', () => applyPreset(key));
-    presetBar.append(b);
-  }
-  const hud = document.createElement('div');
-  hud.className = 'sim-panel sim-hud surface-hud';
-  const hudText = document.createElement('div');
-  const hudStatus = document.createElement('div');
-  hudStatus.className = 'sim-status';
-  hud.append(hudText, hudStatus);
-  const labels = document.createElement('div');
-  labels.className = 'surface-labels';
-  root.append(labels, topLeft, bottom, hud);
-
-  const deg2 = (v) => `${signed(v, 2)}°`;
-  const sLat = makeSlider(topLeft, { label: 'Szerokość (Lat)', min: -90, max: 90, value: -43.31, format: deg2 });
-  const sLon = makeSlider(topLeft, { label: 'Długość (Lon)', min: -180, max: 180, value: -11.36, format: deg2 });
-  const sHeight = makeSlider(topLeft, { label: 'Wysokość nad pow.', min: 2, max: 50000, value: 2, power: 3, format: formatHeightM });
-  topLeft.append(presetBar);
-  const sYear = makeSlider(bottom, { label: 'Rok', min: 2000, max: 2100, value: 2000, isInt: true });
-  const sTime = makeSlider(bottom, { label: 'Czas w roku', min: 0, max: 1, value: 0, format: (v) => v.toFixed(2) });
-
-  // --- czas: wspólny zegar ↔ (rok, indeks godzinowy) ---
-  const timeParts = (ms) => {
-    const y = new Date(ms).getUTCFullYear();
-    return { year: y, idx: (ms - yearStartMs(y)) / HOUR_MS };
+  // --- suwaki obserwatora (geografia.py:2593-2595; Year / Time of Year dochodzą w Tasku 4) ---
+  const panel = document.createElement('div');
+  panel.className = 'sim-panel surface-observer';
+  root.append(panel);
+  const deg2 = (v) => `${signed(v, 2)}°`;   // "{:+.2f}°"
+  const sLat = makeSlider(panel, { label: 'Latitude (Lat)', min: -90.0, max: 90.0, value: -43.31, format: deg2 });
+  const sLon = makeSlider(panel, { label: 'Longitude (Lon)', min: -180.0, max: 180.0, value: -11.36, format: deg2 });
+  const sHeight = makeSlider(panel, {
+    label: 'Height Above Surface', min: 2.0, max: 50000.0, value: 15.0, power: 3.0, format: formatHeightM,
+  });
+  // geografia.py:2703-2705: ruch lat/lon → "Custom Coordinates"
+  sLat.onInput = sLon.onInput = () => {
+    locationName = 'Custom Coordinates';
+    pendingPreset = null;
+    observerChanged();
   };
-  const syncTimeSliders = () => {
-    const { year, idx } = timeParts(clock.t);
-    sYear.set(year);
-    sTime.max = Math.max(0, yearRows(year) - 1);
-    sTime.set(Math.min(idx, sTime.max), fmtUtc(clock.t));
-  };
-  sYear.onInput = (year) => {
-    // newlunar.py:1931-1934: nowy rok, indeks przycięty do jego zakresu
-    const idx = Math.min(timeParts(clock.t).idx, Math.max(0, yearRows(year) - 1));
-    clock.seek(yearStartMs(year) + idx * HOUR_MS);
-  };
-  sTime.onInput = (idx) => clock.seek(yearStartMs(sYear.value) + idx * HOUR_MS);
-  sLat.onInput = sLon.onInput = () => { locationName = 'Własne współrzędne'; observerChanged(); };
   sHeight.onInput = () => observerChanged();
 
   const observer = () => ({ lat_deg: sLat.value, lon_deg: sLon.value, eye_height_m: sHeight.value });
+  const obsKey = () => `${sLat.value}|${sLon.value}|${sHeight.value}`;
 
-  // --- dane z backendu ---
-  let patch = null;
-  let terrainGroup = null;
-  let terrainAbort = null;
-  let terrainTimer = null;
-  let terrainLoading = false;
+  // --- teren: katalog → obserwator → okna kafli → renderer ---
+  let renderer = null;
+  let demWin = null;
+  let albWin = null;
+  let obsTimer = 0;
+  let obsAbort = null;
+  let obsGen = 0;       // ostatnie wysłane żądanie obserwatora
+  let pendingGen = 0;   // generacja, dla której składamy okna (odpowiedź już jest)
+  let drawGen = 0;      // generacja ustawiona w rendererze (okna gotowe)
+  let obsChangedAt = 0;
+  let firstObserver = true;
+
+  function setStatus(msg) {
+    statusMsg = msg;
+    statusTimer = 3.5;
+  }
+
+  function observerChanged() {
+    obsChangedAt = performance.now();
+    clearTimeout(obsTimer);
+    obsTimer = setTimeout(loadObserver, OBSERVER_DEBOUNCE_MS);
+  }
+
+  async function loadObserver() {
+    if (!renderer) return;   // katalog jeszcze nie przyszedł — wywoła nas jego .then
+    obsAbort?.abort();
+    const ctrl = new AbortController();
+    obsAbort = ctrl;
+    const gen = ++obsGen;
+    const preset = pendingPreset;
+    pendingPreset = null;
+    try {
+      const geom = await api.getJson(endpoint('lunar_surface.observer'), observer(), { signal: ctrl.signal });
+      if (gen !== obsGen) return;
+      pendingGen = gen;
+      const { lat_deg: lat, lon_deg: lon } = geom.observer;
+      const ok = await Promise.all([
+        demWin.ensure(lat, lon, geom.r_max_km, ctrl.signal),
+        albWin.ensure(lat, lon, geom.r_max_km, ctrl.signal),
+      ]);
+      if (gen !== obsGen || !ok[0] || !ok[1]) return;
+      renderer.setObserver(geom);
+      drawGen = gen;
+      if (firstObserver) {
+        firstObserver = false;
+        // geografia.py:2598-2600
+        camAlt = Math.max(camAlt, renderer.horizonAt(camAz) + 6.0 * DEG);
+      }
+      if (preset) {
+        // geografia.py:2766-2769
+        camAz = preset.azDeg * DEG;
+        const horAlt = renderer.horizonAt(camAz);
+        camAlt = Math.min(Math.PI / 2.0 - 0.05, horAlt + 5.5 * DEG);
+      }
+    } catch (e) {
+      if (e?.name === 'AbortError' || gen !== obsGen) return;
+      console.error(e);
+      setStatus(`Błąd terenu: ${e?.message ?? e}`);
+    } finally {
+      if (obsAbort === ctrl) obsAbort = null;
+    }
+  }
+
+  const drawable = () => renderer !== null && drawGen !== 0 && pendingGen === drawGen && demWin.ready && albWin.ready;
+
+  api.getJson(endpoint('lunar_surface.catalog'), {}, { cache: true })
+    .then((cat) => {
+      renderer = new TerrainRenderer(gl, cat);
+      demWin = new TileWindow(gl, cat.dem, {
+        internalFormat: gl.R32F, format: gl.RED, type: gl.FLOAT, mipmaps: false, unit: 0, rMoonKm: cat.r_moon_km,
+      });
+      albWin = new TileWindow(gl, cat.albedo, {
+        internalFormat: gl.RGB8, format: gl.RGB, type: gl.UNSIGNED_BYTE, mipmaps: true, unit: 1, rMoonKm: cat.r_moon_km,
+      });
+      loadObserver();
+    })
+    .catch((e) => {
+      console.error(e);
+      fatal(`Nie udało się przygotować terenu: ${e?.message ?? e}`);
+    });
+
+  // --- niebo: przeniesione z poprzedniego portu (jedno żądanie w locie, interpolacja) ---
   let skyPrev = null;
   let skyCurr = null;
   let skyAbort = null;
   let skyLastReq = 0;
   let skyReqKey = '';
   let skyObsKey = '';
-
-  const obsKey = () => `${sLat.value}|${sLon.value}|${sHeight.value}`;
-
-  let obsChangedAt = 0;
   let skyInflightObs = null;
-
-  function observerChanged() {
-    obsChangedAt = performance.now();
-    clearTimeout(terrainTimer);
-    terrainTimer = setTimeout(loadTerrain, TERRAIN_DEBOUNCE_MS);
-  }
-
-  async function loadTerrain() {
-    terrainAbort?.abort();
-    const ctrl = new AbortController();
-    terrainAbort = ctrl;
-    terrainLoading = true;
-    const reqObs = obsKey();
-    let retrying = false;
-    try {
-      const p = await api.getJson(endpoint('lunar_surface.terrain'), observer(), { signal: ctrl.signal });
-      if (ctrl.signal.aborted) return;
-      if (terrainGroup) {
-        scene.remove(terrainGroup);
-        terrainGroup.userData.dispose();
-      }
-      patch = p;
-      terrainGroup = buildTerrainMesh(p);
-      terrainGroup.userData.setWireframe(wireframe);
-      scene.add(terrainGroup);
-      sky.setHorizon(p.horizon);
-      rebuildHorizonLine();
-    } catch (err) {
-      if (err?.name === 'AbortError') return;
-      // 503: teren przeliczany dla innego zapytania — ponów, jeśli obserwator się nie zmienił
-      if (err?.status === 503 && reqObs === obsKey()) {
-        retrying = true;
-        clearTimeout(terrainTimer);
-        terrainTimer = setTimeout(loadTerrain, 1000);
-        return;
-      }
-      setStatus(`Błąd terenu: ${err?.message ?? err}`);
-    } finally {
-      if (terrainAbort === ctrl && !retrying) terrainLoading = false;
-    }
-  }
 
   /**
    * Niebo: jedno żądanie naraz. Zmiana czasu nie przerywa żądania w locie — po odpowiedzi
@@ -235,7 +228,7 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
     const reqObs = obsKey();
     if (skyAbort && skyInflightObs !== reqObs) { skyAbort.abort(); skyAbort = null; }
     if (skyAbort) return;
-    if (now - obsChangedAt < TERRAIN_DEBOUNCE_MS) return;
+    if (now - obsChangedAt < OBSERVER_DEBOUNCE_MS) return;
     const key = `${clock.t}|${reqObs}`;
     if (key === skyReqKey || now - skyLastReq < SKY_MIN_INTERVAL_MS) return;
     skyReqKey = key;
@@ -253,16 +246,16 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
         skyCurr = s;
         skyObsKey = reqObs;
       })
-      .catch((err) => {
-        if (err?.name === 'AbortError') return;
+      .catch((e) => {
+        if (e?.name === 'AbortError') return;
         skyReqKey = '';   // 503 / błąd sieci: ponów po SKY_MIN_INTERVAL_MS
-        if (err?.status !== 503) setStatus(`Błąd nieba: ${err?.message ?? err}`);
+        if (e?.status !== 503) setStatus(`Błąd nieba: ${e?.message ?? e}`);
       })
       .finally(() => { if (skyAbort === ctrl) skyAbort = null; });
   }
 
   // Obrót Ziemi między próbkami nieba: osie ECEF obracają się wokół osi Z z szybkością GMST
-  // z newlunar.get_topocentric_vectors (360.98564736629°/dobę) — tylko interpolacja do rysowania.
+  // z get_topocentric_vectors (360.98564736629°/dobę) — tylko interpolacja do rysowania.
   const EARTH_RATE = (360.98564736629 * DEG) / 86_400_000;   // rad/ms
   const rotateAxes = (A, dtMs) => {
     const th = EARTH_RATE * dtMs;
@@ -272,14 +265,18 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
     return [x.map((v, i) => c * v + s * y[i]), y.map((v, i) => -s * x[i] + c * v), z];
   };
   // Gram-Schmidt bez iloczynu wektorowego: baza [N, E, U] jest lewoskrętna, więc Z × X po
-  // składowych dałoby −Y.
+  // składowych dałoby −Y. (Te same kroki co wcześniej na THREE.Vector3, na tablicach.)
+  const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const normalize3 = (a) => { const l = Math.sqrt(dot3(a, a)) || 1; return a.map((v) => v / l); };
+  const addScaled3 = (a, b, s) => a.map((v, i) => v + b[i] * s);
   const orthonormal = ([x, y, z]) => {
-    const Z = new THREE.Vector3(...z).normalize();
-    const X = new THREE.Vector3(...x);
-    X.addScaledVector(Z, -X.dot(Z)).normalize();
-    const Y = new THREE.Vector3(...y);
-    Y.addScaledVector(Z, -Y.dot(Z)).addScaledVector(X, -Y.dot(X)).normalize();
-    return [X.toArray(), Y.toArray(), Z.toArray()];
+    const Z = normalize3(z);
+    let X = [...x];
+    X = normalize3(addScaled3(X, Z, -dot3(X, Z)));
+    let Y = [...y];
+    Y = addScaled3(Y, Z, -dot3(Y, Z));
+    Y = normalize3(addScaled3(Y, X, -dot3(Y, X)));
+    return [X, Y, Z];
   };
 
   /** Stan nieba w chwili clock.t: liniowa inter/ekstrapolacja między dwiema ostatnimi odpowiedziami. */
@@ -330,106 +327,41 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
     };
   }
 
-  // --- horyzont (LunarTerrain3D.get_horizon_at_azimuth) ---
-  function horizonAt(azRad) {
-    if (!patch) return 0;
-    const alt = patch.horizon.alt_deg;
-    const n = alt.length;
-    const x = (((azRad % TWO_PI) + TWO_PI) % TWO_PI) / TWO_PI * n;
-    const i = Math.floor(x) % n;
-    const f = x - Math.floor(x);
-    return (alt[i] * (1 - f) + alt[(i + 1) % n] * f) * DEG;
+  // --- kamera ---
+  // geografia.py:2623-2640
+  function zoomAtPoint(zoomFactor, mx, my, cw, ch) {
+    const oldTarget = targetFov;
+    targetFov = Math.max(MIN_FOV, Math.min(MAX_FOV, targetFov * zoomFactor));
+    if (Math.abs(targetFov - oldTarget) < 1e-9) return;
+    const focalOld = (ch / 2.0) / Math.tan(oldTarget / 2.0);
+    const focalNew = (ch / 2.0) / Math.tan(targetFov / 2.0);
+    const dxPx = mx - cw / 2.0;
+    const dyPx = ch / 2.0 - my;
+    camAz = mod2pi(
+      camAz
+      + (Math.atan2(dxPx, focalOld) - Math.atan2(dxPx, focalNew)) / Math.max(0.25, Math.cos(camAlt)),
+    );
+    camAlt = Math.max(
+      -Math.PI / 2.0 + 0.01,
+      Math.min(Math.PI / 2.0 - 0.01, camAlt + (Math.atan2(dyPx, focalOld) - Math.atan2(dyPx, focalNew))),
+    );
   }
 
-  // --- linia horyzontu (draw_3d: kolor (90,175,220), grubość 2 px, na wierzchu terenu) ---
-  const horizonMat = new LineMaterial({ color: 0x5aafdc, linewidth: 2, depthTest: false, depthWrite: false });
-  let horizonLine = null;
-  function rebuildHorizonLine() {
-    if (horizonLine) { scene.remove(horizonLine); horizonLine.geometry.dispose(); horizonLine = null; }
-    if (!patch) return;
-    const pts = [];
-    const alt = patch.horizon.alt_deg;
-    for (let i = 0; i <= alt.length; i++) {
-      const az = (i % alt.length) * TWO_PI / alt.length;
-      const a = alt[i % alt.length] * DEG;
-      const v = enuToScene([Math.cos(a) * Math.cos(az), Math.cos(a) * Math.sin(az), Math.sin(a)]).multiplyScalar(3000);
-      pts.push(v.x, v.y, v.z);
-    }
-    const g = new LineGeometry();
-    g.setPositions(pts);
-    horizonLine = new Line2(g, horizonMat);
-    horizonLine.renderOrder = 10;
-    horizonLine.frustumCulled = false;
-    horizonLine.visible = showHorizonLine;
-    scene.add(horizonLine);
-  }
-
-  // --- kamera (get_camera_basis, zoom_at_point) ---
-  const size = { cw: 1, ch: 1 };
-  function zoomAtPoint(factor, mx, my) {
-    const old = targetFov;
-    targetFov = Math.max(MIN_FOV, Math.min(MAX_FOV, targetFov * factor));
-    if (Math.abs(targetFov - old) < 1e-9) return;
-    const { cw, ch } = size;
-    const fOld = (ch / 2) / Math.tan(old / 2);
-    const fNew = (ch / 2) / Math.tan(targetFov / 2);
-    const dx = mx - cw / 2;
-    const dy = ch / 2 - my;
-    camAz = (((camAz + (Math.atan2(dx, fOld) - Math.atan2(dx, fNew)) / Math.max(0.25, Math.cos(camAlt))) % TWO_PI) + TWO_PI) % TWO_PI;
-    camAlt = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, camAlt + (Math.atan2(dy, fOld) - Math.atan2(dy, fNew))));
-  }
-  const fwdScene = new THREE.Vector3();
-  function updateCamera() {
-    camera.fov = fov / DEG;
-    camera.aspect = size.cw / size.ch;
-    camera.updateProjectionMatrix();
-    enuToScene([Math.cos(camAlt) * Math.cos(camAz), Math.cos(camAlt) * Math.sin(camAz), Math.sin(camAlt)], fwdScene);
-    camera.up.set(0, 1, 0);
-    camera.lookAt(fwdScene);
-  }
-
-  function setStatus(msg) {
-    statusMsg = msg;
-    statusTimer = 3.5;
-  }
-
+  // geografia.py:2764-2769: preset ustawia lat/lon; kamera po odpowiedzi observer
   function applyPreset(key) {
     const p = PRESETS[key];
     if (!p) return;
-    [locationName] = p;
-    sLat.set(p[1]);
-    sLon.set(p[2]);
+    const [name, lat, lon, azDeg] = p;
+    locationName = name;
+    sLat.set(lat);
+    sLon.set(lon);
+    pendingPreset = { azDeg };
     observerChanged();
   }
 
-  function exportHorizonCsv() {
-    if (!patch) return;
-    const h = patch.horizon;
-    const head = ['Azimuth_deg', 'Horizon_Altitude_deg', 'Horizon_Distance_km', 'Horizon_Lat_deg', 'Horizon_Lon_deg',
-      'Horizon_Elevation_km', 'Observer_Lat_deg', 'Observer_Lon_deg', 'Observer_Elevation_km',
-      'Observer_Height_above_surface_m'];
-    const rows = [head.join(',')];
-    const ob = patch.observer;
-    for (let i = 0; i < h.alt_deg.length; i++) {
-      rows.push([
-        fixed(h.az_deg[i], 4), fixed(h.alt_deg[i], 6), fixed(h.distance_km[i], 4), fixed(h.lat_deg[i], 6),
-        fixed(h.lon_deg[i], 6), fixed(h.elevation_km[i], 5), fixed(ob.lat_deg, 6), fixed(ob.lon_deg, 6),
-        fixed(patch.observer_elevation_m / 1000, 5), fixed(patch.eye_height_m, 2),
-      ].join(','));
-    }
-    const blob = new Blob([rows.join('\r\n') + '\r\n'], { type: 'text/csv' });   // csv.writer: \r\n
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'horizon.csv';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    setStatus('Zapisano profil horyzontu: horizon.csv');
-  }
-
-  // --- wejście: mysz i klawiatura (newlunar.py:1870-1927) ---
+  // --- wejście: mysz (geografia.py:2709-2725) i klawiatura (:2726-2769, część Tasku 3) ---
   let dragging = false;
   let last = [0, 0];
-  const canvas = renderer.domElement;
   canvas.addEventListener('pointerdown', (ev) => {
     if (ev.button !== 0) return;
     dragging = true;
@@ -437,61 +369,42 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
     canvas.setPointerCapture(ev.pointerId);
   });
   canvas.addEventListener('pointerup', (ev) => { if (ev.button === 0) dragging = false; });
+  // przerwany wskaźnik (dotyk, gest systemu) też kończy przeciąganie — inaczej kamera „wisi”
+  canvas.addEventListener('pointercancel', () => { dragging = false; });
+  canvas.addEventListener('lostpointercapture', () => { dragging = false; });
   canvas.addEventListener('pointermove', (ev) => {
     if (!dragging) return;
     const dx = ev.clientX - last[0];
     const dy = ev.clientY - last[1];
     last = [ev.clientX, ev.clientY];
-    const sens = fov / size.ch;
-    camAz = (((camAz - dx * sens) % TWO_PI) + TWO_PI) % TWO_PI;
+    const sens = fov / canvas.height;
+    camAz = mod2pi(camAz - dx * sens);
     camAlt = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, camAlt + dy * sens));
   });
   canvas.addEventListener('wheel', (ev) => {
     ev.preventDefault();
-    const steps = -Math.sign(ev.deltaY);
+    const steps = -Math.sign(ev.deltaY);   // event.y w pygame: +1 = kółko od siebie
     if (!steps) return;
     const r = canvas.getBoundingClientRect();
-    zoomAtPoint(0.80 ** steps, ev.clientX - r.left, ev.clientY - r.top);
+    zoomAtPoint(0.80 ** steps, ev.clientX - r.left, ev.clientY - r.top, canvas.width, canvas.height);
   }, { passive: false });
 
   function onKey(ev) {
     if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLSelectElement) return;
     if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
     const k = ev.key;
-    const view = skyAt(clock.t);
-    const { cw, ch } = size;
-    if (k === ' ') {
-      clock.toggle();
-    } else if (k === '+' || k === '=' || ev.code === 'NumpadAdd') {
-      zoomAtPoint(0.75, cw / 2, ch / 2);
+    const cw = canvas.width;
+    const ch = canvas.height;
+    if (k === '+' || k === '=' || ev.code === 'NumpadAdd') {
+      zoomAtPoint(0.75, cw / 2.0, ch / 2.0, cw, ch);
     } else if (k === '-' || ev.code === 'NumpadSubtract') {
-      zoomAtPoint(1 / 0.75, cw / 2, ch / 2);
+      zoomAtPoint(1.0 / 0.75, cw / 2.0, ch / 2.0, cw, ch);
     } else if (k === 'r' || k === 'R') {
       targetFov = BASE_FOV;
-    } else if ((k === 'e' || k === 'E') && view) {
-      const a = view.earth.alt_deg * DEG;
-      const z = view.earth.az_deg * DEG;
-      const dist = Math.hypot(camAlt - a, wrapPi(camAz - z));
-      camAlt = a; camAz = z;
-      if (dist < 2 * DEG) targetFov = 3.2 * DEG;
-    } else if ((k === 's' || k === 'S') && view) {
-      const a = view.sun.alt_deg * DEG;
-      const z = view.sun.az_deg * DEG;
-      const dist = Math.hypot(camAlt - a, wrapPi(camAz - z));
-      camAlt = a; camAz = z;
-      if (dist < 2 * DEG) targetFov = 1.4 * DEG;
-    } else if (k === 'l' || k === 'L') {
-      const hor = horizonAt(camAz);
-      if (Math.abs(camAlt - hor) < 1.5 * DEG) targetFov = 8 * DEG;
-      camAlt = hor;
     } else if (k === 'm' || k === 'M') {
       wireframe = !wireframe;
-      terrainGroup?.userData.setWireframe(wireframe);
     } else if (k === 'h' || k === 'H') {
       showHorizonLine = !showHorizonLine;
-      if (horizonLine) horizonLine.visible = showHorizonLine;
-    } else if (k === 'c' || k === 'C') {
-      exportHorizonCsv();
     } else if (PRESETS[k]) {
       applyPreset(k);
     } else {
@@ -500,107 +413,191 @@ export function createSurfaceMode({ root, api, endpoint, clock }) {
     ev.preventDefault();
   }
 
-  // --- HUD (newlunar.py:2093-2121) ---
-  function renderHud(view) {
-    const zoom = BASE_FOV / fov;
-    const lines = [
-      `Lokacja: ${locationName} | DEM: ${patch?.dem_source ?? '—'} (SUB ${patch?.window_sub ?? 1}x)`,
-      `Teren: ${signed((patch?.observer_elevation_m ?? 0) / 1000, 3)} km | Wys. obs.: ${formatHeightM(sHeight.value)} | Zoom: ${zoom.toFixed(1)}x`,
-      `Kamera: Az ${fixed(camAz / DEG, 2)}° | Alt ${signed(camAlt / DEG, 2)}° (Hor: ${signed(horizonAt(camAz) / DEG, 2)}°)`,
-      `Siatka terenu: ${patch ? `${patch.n_az}×${patch.n_r}` : '—'} (${terrainGroup?.userData.triangles ?? 0} trójkątów)`,
-      '-'.repeat(62),
-      view ? `ZIEMIA: Alt ${signed(view.earth.alt_deg, 2, 6)}° | Az ${pad(fixed(view.earth.az_deg, 2), 6)}° [${view._base.earth.status}]` : 'ZIEMIA: —',
-      view ? `SŁOŃCE: Alt ${signed(view.sun.alt_deg, 2, 6)}° | Az ${pad(fixed(view.sun.az_deg, 2), 6)}° [${view._base.sun.status}]` : 'SŁOŃCE: —',
-      '-'.repeat(62),
-      '[Scroll / +/-] Zoom (do 375x) | [R] Reset zoomu | [Spacja] Play',
-      '[E] Ziemia (2x = zoom) | [S] Słońce (2x = zoom) | [L] Horyzont',
-      '[M] Siatka 3D | [H] Linia horyzontu | [C] Zapisz horizon.csv',
-      '[1-5] Lokacje Księżyca',
-    ];
-    hudText.textContent = lines.join('\n');
-    hudStatus.textContent = statusTimer > 0 ? statusMsg : (terrainLoading ? 'Wczytywanie terenu…' : '');
+  // --- nakładka 2D: stan ładowania i komunikaty (HUD geografii dochodzi w Tasku 4) ---
+  let overlayText = null;
+  function drawOverlay(lines) {
+    const text = lines.join('\n');
+    if (text === overlayText) return;
+    overlayText = text;
+    ctx2d.clearRect(0, 0, overlay.width, overlay.height);
+    ctx2d.font = '15px Consolas, "DejaVu Sans Mono", monospace';
+    ctx2d.textAlign = 'center';
+    ctx2d.textBaseline = 'middle';
+    lines.forEach((ln, i) => {
+      ctx2d.fillStyle = i === 0 ? 'rgb(210, 215, 225)' : 'rgb(120, 235, 150)';
+      ctx2d.fillText(ln, overlay.width / 2, overlay.height / 2 + i * 22);
+    });
+  }
+
+  function loadingLine(view) {
+    if (!renderer || (drawGen === 0 && pendingGen === 0)) return 'Ładowanie obserwatora…';
+    if (!drawable()) {
+      const k = demWin.loaded + albWin.loaded;
+      const n = demWin.total + albWin.total;
+      return `Ładowanie kafli terenu ${k}/${n}`;
+    }
+    if (!view) return 'Ładowanie nieba…';
+    return '';
   }
 
   // --- pętla ---
   let raf = 0;
   let lastFrame = 0;
+  let fps = 0;
+  let fpsFrames = 0;
+  let fpsT0 = 0;
   function frame(now) {
     raf = requestAnimationFrame(frame);
     const dt = lastFrame ? Math.min(0.1, (now - lastFrame) / 1000) : 0;
     lastFrame = now;
-    if (!animFrozen) animTime += dt;
-    if (statusTimer > 0) statusTimer = Math.max(0, statusTimer - dt);
-
-    if (clock.playing) {
-      // newlunar.py:1936-1939: +24 indeksy/s, po końcu roku powrót do 0 w tym samym roku
-      const { year, idx } = timeParts(clock.t);
-      let next = idx + PLAY_SPEED * dt;
-      if (next >= yearRows(year) - 1) next = 0;
-      clock.seek(yearStartMs(year) + next * HOUR_MS);
+    fpsFrames++;
+    if (!fpsT0) fpsT0 = now;
+    if (now - fpsT0 >= 1000) {
+      fps = (fpsFrames * 1000) / (now - fpsT0);
+      fpsFrames = 0;
+      fpsT0 = now;
     }
-    fov += (targetFov - fov) * Math.min(1, 14 * dt);
+    if (statusTimer > 0) statusTimer = Math.max(0, statusTimer - dt);
+    // geografia.py:2771
+    fov += (targetFov - fov) * Math.min(1.0, 14.0 * dt);
 
     maybeFetchSky(now);
     const view = skyAt(clock.t);
-    updateCamera();
-    if (view) {
-      const sunEff = view.sun.effective_visibility;
-      terrainGroup?.userData.setLighting({
-        sunDirScene: enuToScene(view.sun.dir_enu),
-        sunEffVis: sunEff,
-        earthAltRad: view.earth.alt_deg * DEG,
-        redGlow: view.eclipse_red_glow,
+    if (contextLost || gl.isContextLost()) return;
+
+    const cw = canvas.width;
+    const ch = canvas.height;
+    gl.viewport(0, 0, cw, ch);
+    // geografia.py:2839-2844
+    gl.clearColor(5.0 / 255.0, 7.0 / 255.0, 12.0 / 255.0, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.disable(gl.DEPTH_TEST);
+    gl.disable(gl.CULL_FACE);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    // (geografia.py:2846-2873 — gwiazdy, siatka, Słońce, Ziemia: Task 4)
+
+    // geografia.py:2875-2883
+    if (drawable() && view) {
+      renderer.draw({
+        cw, ch, camAlt, camAz, fov,
+        sunAlt: view.sun.alt_deg * DEG,
+        sunAz: view.sun.az_deg * DEG,
+        earthAlt: view.earth.alt_deg * DEG,
+        earthAz: view.earth.az_deg * DEG,
+        sunEffectiveVis: view.sun.effective_visibility,
+        eclipseRedGlow: view.eclipse_red_glow,
+        wireframe,
+        showHorizonLine,
+        demWin,
+        albedoWin: albWin,
       });
-      sky.update(view, { camera, fov, size, camAlt, camAz, clockMs: clock.t, yearStartMs: yearStartMs(timeParts(clock.t).year), animTime, horizonAt, labels });
     }
-    renderer.render(scene, camera);
-    renderHud(view);
+    drawOverlay([loadingLine(view), statusTimer > 0 ? statusMsg : ''].filter(Boolean));
   }
 
+  // Canvas w pikselach CSS (odchylenie 8: devicePixelRatio = 1)
   function resize() {
-    const r = root.getBoundingClientRect();
-    size.cw = Math.max(1, r.width);
-    size.ch = Math.max(1, r.height);
-    renderer.setSize(size.cw, size.ch, false);
-    renderer.domElement.style.width = '100%';
-    renderer.domElement.style.height = '100%';
-    horizonMat.resolution.set(size.cw, size.ch);
+    const w = Math.max(1, canvas.clientWidth);
+    const h = Math.max(1, canvas.clientHeight);
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    if (overlay.width !== w || overlay.height !== h) {
+      overlay.width = w;
+      overlay.height = h;
+      overlayText = null;
+    }
   }
   const ro = new ResizeObserver(resize);
 
-  const onTime = () => syncTimeSliders();
-
-  observerChanged();
-  syncTimeSliders();
-  // Uchwyt do debugowania w konsoli (jak window.modi na stronie głównej).
+  // Uchwyt do debugowania i weryfikacji w konsoli.
   root._debug = {
-    scene, camera, renderer,
-    get terrain() { return terrainGroup; },
-    get patch() { return patch; },
+    gl,
+    get renderer() { return renderer; },
+    get drawnCount() { return renderer?.drawnCount ?? 0; },
+    get nTris() { return renderer?.nTris ?? 0; },
+    get lodTauUsed() { return renderer?.lodTauUsed ?? TAU_PX; },
+    get tiles() { return demWin && { dem: demWin.info(), albedo: albWin.info() }; },
+    get fps() { return fps; },
+    get observer() { return renderer?.geom ?? null; },
+    get ready() { return drawable(); },
+    get locationName() { return locationName; },
+    get camera() { return { camAlt, camAz, fov, targetFov, wireframe, showHorizonLine }; },
     get sky() { return skyAt(clock.t); },
-    setAnimTime(v) { animTime = v; animFrozen = true; },
     setCamera(altDeg, azDeg, fovDeg = BASE_FOV / DEG) {
       camAlt = altDeg * DEG; camAz = azDeg * DEG; fov = targetFov = fovDeg * DEG;
+    },
+    setCameraRad(alt, az, fovRad = BASE_FOV) {
+      camAlt = alt; camAz = az; fov = targetFov = fovRad;
+    },
+    setLocation(lat, lon, eye = sHeight.value) {
+      sLat.set(lat); sLon.set(lon); sHeight.set(eye);
+      locationName = 'Custom Coordinates';
+      observerChanged();
+    },
+    get windows() { return { dem: demWin, albedo: albWin }; },
+    /**
+     * Czas klatki niezależny od rAF (przeglądarki potrafią dławić rAF w tle): `iters` klatek
+     * terenu rysowanych od razu, każda zakończona readPixels (synchronizacja z GPU).
+     */
+    benchmark(iters = 20) {
+      const view = skyAt(clock.t);
+      if (!drawable() || !view) return null;
+      const cw = canvas.width;
+      const ch = canvas.height;
+      const px = new Uint8Array(4);
+      const times = [];
+      for (let i = 0; i < iters; i++) {
+        const t0 = performance.now();
+        gl.viewport(0, 0, cw, ch);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        renderer.draw({
+          cw, ch, camAlt, camAz, fov,
+          sunAlt: view.sun.alt_deg * DEG, sunAz: view.sun.az_deg * DEG,
+          earthAlt: view.earth.alt_deg * DEG, earthAz: view.earth.az_deg * DEG,
+          sunEffectiveVis: view.sun.effective_visibility, eclipseRedGlow: view.eclipse_red_glow,
+          wireframe, showHorizonLine, demWin, albedoWin: albWin,
+        });
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        times.push(performance.now() - t0);
+      }
+      times.sort((a, b) => a - b);
+      const median = times[times.length >> 1];
+      return { medianMs: median, fps: 1000 / median, drawnCount: renderer.drawnCount, lodTauUsed: renderer.lodTauUsed, cw, ch };
+    },
+    /** _select_lod na świeżym stanie (lodTau = TAU_PX) dla porównania z Pythonem; stan rendera bez zmian. */
+    lodParity(cw, ch, camAltRad, camAzRad, fovRad) {
+      const saved = [renderer.lodTau, renderer.lodTauUsed, renderer.quadCount];
+      renderer.lodTau = TAU_PX;
+      const p = renderer.selectLod(cw, ch, camAltRad, camAzRad, fovRad);
+      const out = { n: p.lat0.length, lodTauUsed: renderer.lodTauUsed, lodTau: renderer.lodTau };
+      [renderer.lodTau, renderer.lodTauUsed, renderer.quadCount] = saved;
+      return out;
     },
   };
 
   return {
     activate() {
-      ro.observe(root);
+      active = true;
+      if (fatalMsg) err.show(fatalMsg);
+      ro.observe(canvas);
       resize();
       window.addEventListener('keydown', onKey);
-      clock.addEventListener('timechange', onTime);
-      syncTimeSliders();
       lastFrame = 0;
+      fpsT0 = 0;
+      fpsFrames = 0;
       skyReqKey = '';
       raf = requestAnimationFrame(frame);
     },
     deactivate() {
+      active = false;
       cancelAnimationFrame(raf);
       ro.disconnect();
       window.removeEventListener('keydown', onKey);
-      clock.removeEventListener('timechange', onTime);
       skyAbort?.abort();
+      if (fatalMsg) err.hide(fatalMsg);
     },
   };
 }
