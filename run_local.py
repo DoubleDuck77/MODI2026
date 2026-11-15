@@ -121,7 +121,9 @@ def main(argv=None) -> int:
     check_data()
     vpy = ensure_venv()
 
-    print(f"\nSymulacja: http://127.0.0.1:{args.port}/sim.html   (Ctrl+C kończy)\n", flush=True)
+    print(f"\nStrona:    http://127.0.0.1:{args.port}/", flush=True)
+    print(f"Symulacja: http://127.0.0.1:{args.port}/sim.html", flush=True)
+    print(f"Porównanie miejsc: http://127.0.0.1:{args.port}/dwa%20wykresy.html   (Ctrl+C kończy)\n", flush=True)
     env = os.environ | {"PYTHONUTF8": "1", "PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1"}
     cmd = [str(vpy), "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(args.port)]
     try:

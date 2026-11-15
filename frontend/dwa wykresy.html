@@ -1459,15 +1459,7 @@
       "Wyszedłeś poza dozwolony zakres dat (01.01.2000 00:00 – 01.01.2100 00:00).";
 
     function normalizujKomunikatBleduSerwera(rawMsg) {
-      const msg = String(rawMsg || "");
-      const czyBladZakresuDat =
-        /ephemeris|segment|covers|out of range|zakres|dat[ay]?|poza|wcześniejsz|późniejsz|1999|2000|2050|2053|2100|de4\d+|\.bsp|brak danych|brak pliku|nie znaleziono pliku/i.test(
-          msg
-        );
-      if (czyBladZakresuDat) {
-        return `${KOMUNIKAT_POZA_ZAKRESEM_DAT} Wybierz daty mieszczące się w dozwolonym przedziale.`;
-      }
-      return msg;
+      return String(rawMsg || "");
     }
 
     function parsujDateDoMs(str) {
@@ -3088,4 +3080,8 @@
     });
   </script>
 </body>
+
+
+
+
 </html>

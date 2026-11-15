@@ -15,6 +15,7 @@ class Settings:
     coords_dir: Path
     scripts_dir: Path  # katalog z root-skryptami (neworb.py, geografia.py, radius.py, generator.py)
     pds_data_dir: Path  # mapy zasobów PDS (lunar_pds_data)
+    topo_cache_dir: Path  # zapisywalny cache horyzontu LOLA dla /api/wykresy (w Dockerze /tmp)
 
     @property
     def examples_dir(self) -> Path:
@@ -32,4 +33,5 @@ class Settings:
             coords_dir=path("MODI_COORDS_DIR", "coords"),
             scripts_dir=path("MODI_SCRIPTS_DIR", "."),
             pds_data_dir=path("MODI_PDS_DATA_DIR", "lunar_pds_data"),
+            topo_cache_dir=path("MODI_TOPO_CACHE_DIR", "moon_topo_cache"),
         )

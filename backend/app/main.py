@@ -12,6 +12,7 @@ from app.core.feature import FeatureModule
 from app.core.registry import FeatureRegistry, discover_features
 from app.core.routing import API_PREFIX, build_feature_router, build_frame_router, build_manifest_router
 from app.settings import Settings
+from app.site_comparison import build_site_comparison_router
 
 __all__ = ["API_PREFIX", "app", "create_app"]
 
@@ -51,6 +52,8 @@ def create_app(settings: Optional[Settings] = None, features: Optional[List[Feat
     app.include_router(build_manifest_router(registry), prefix=API_PREFIX, tags=["system"])
     app.include_router(build_frame_router(registry), prefix=API_PREFIX, tags=["system"])
     app.include_router(build_feature_router(registry), prefix=API_PREFIX)
+    # Strona porównania dwóch miejsc woła /api/strefy i /api/wykresy (poza /api/v1, jak w jej oryginale).
+    app.include_router(build_site_comparison_router(settings))
 
     app.mount("/textures", StaticFiles(directory=settings.textures_dir, check_dir=False), name="textures")
     # Frontend jako ostatni mount: łapie wszystko, czego nie obsłużyły trasy powyżej.
