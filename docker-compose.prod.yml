@@ -29,7 +29,7 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
-    mem_limit: 5g   # teren newlunar: do ~1.6 GB chwilowo, biegun do ~4.3 GB (pomiar 2026-11-14)
+    mem_limit: 3g   # geografia + warm-up radius: szczyt 1.83 GiB (cgroup memory.peak, pomiar 2026-11-15) x1.5, zaokr. do 0.5g
     logging:
       driver: json-file
       options:
