@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Uruchamia strony ``/sim.html`` oraz ``/dwa wykresy.html`` (backend FastAPI) bez Dockera — Windows, Linux, macOS.
 
     py -3.12 run_local.py              # Windows
@@ -6,6 +7,7 @@
 """
 
 import argparse
+import builtins
 import hashlib
 import os
 import subprocess
@@ -19,14 +21,16 @@ VENV = REPO / ".venv"
 REQUIREMENTS = BACKEND_DIR / "requirements.txt"
 PY_VERSION = (3, 12)
 
-REQUIRED_DATA = (
-    "Textures/moon_dem_nasa_16ppd_v3.npy",
-    "Textures/moon_color_nasa_8k_v3.npy",
-    "coords/2026.csv",
+REQUIRED_SCRIPTS = (
     "frontend/linear_interpolation_position.py",
     "frontend/time_zone_converter.py",
     "frontend/energy_plot_generator.py",
     "frontend/elevation_plot_generator.py",
+)
+REQUIRED_DATA_CANDIDATES = (
+    ("Textures/moon_dem_nasa_16ppd_v3.npy", "frontend/Textures/moon_dem_nasa_16ppd_v3.npy"),
+    ("Textures/moon_color_nasa_8k_v3.npy", "frontend/Textures/moon_color_nasa_8k_v3.npy"),
+    ("coords/2026.csv", "frontend/coords/2026.csv"),
 )
 STAMP = VENV / "requirements.sha256"
 
@@ -47,7 +51,10 @@ def check_python() -> None:
 
 
 def check_data() -> None:
-    missing = [p for p in REQUIRED_DATA if not (REPO / p).is_file()]
+    missing = [p for p in REQUIRED_SCRIPTS if not (REPO / p).is_file()]
+    for candidates in REQUIRED_DATA_CANDIDATES:
+        if not any((REPO / c).is_file() for c in candidates):
+            missing.append(" lub ".join(candidates))
     if missing:
         fail(
             "Brak plików danych:\n"
@@ -96,6 +103,56 @@ def ensure_venv() -> Path:
     return vpy
 
 
+def _install_data_path_resolver() -> None:
+    """Przekierowuje odwołania do coords/ i Textures/ na istniejący katalog (frontend/ lub główny)."""
+    def _resolve(file):
+        if not isinstance(file, (str, os.PathLike)):
+            return file
+        raw = os.fspath(file)
+        if not isinstance(raw, str):
+            return file
+        p = Path(raw)
+        if p.exists():
+            return file
+        parts = p.parts
+        for folder_name in ("coords", "Textures", "textures"):
+            if folder_name in parts:
+                idx = parts.index(folder_name)
+                rel = Path(*parts[idx:])
+                for base in (FRONTEND_DIR, REPO):
+                    candidate = base / rel
+                    if candidate.exists():
+                        return str(candidate) if isinstance(file, str) else candidate
+        return file
+
+    orig_open = builtins.open
+    orig_exists = os.path.exists
+    orig_isfile = os.path.isfile
+    orig_isdir = os.path.isdir
+    orig_listdir = os.listdir
+    orig_scandir = os.scandir
+
+    def patched_open(file, *args, **kwargs):
+        return orig_open(_resolve(file), *args, **kwargs)
+
+    builtins.open = patched_open
+    os.path.exists = lambda path: orig_exists(_resolve(path))
+    os.path.isfile = lambda path: orig_isfile(_resolve(path))
+    os.path.isdir = lambda path: orig_isdir(_resolve(path))
+    os.listdir = lambda path=".": orig_listdir(_resolve(path))
+    os.scandir = lambda path=".": orig_scandir(_resolve(path))
+
+
+def _dostepne_lata_csv() -> list[str]:
+    lata = set()
+    for folder in (FRONTEND_DIR / "coords", REPO / "coords"):
+        if folder.is_dir():
+            for f in folder.glob("*.csv"):
+                if f.stem.isdigit():
+                    lata.add(f.stem)
+    return sorted(lata)
+
+
 def create_app():
     """Fabryka aplikacji FastAPI uruchamiana przez uvicorn wewnątrz .venv."""
     import traceback
@@ -109,10 +166,15 @@ def create_app():
         if p not in sys.path:
             sys.path.insert(0, p)
 
+    # Importujemy app.main zanim zmienimy cwd na REPO, żeby nie zepsuć względnych ścieżek w backend/app/main.py
+    from app.main import app
+
+    os.chdir(REPO)
+    _install_data_path_resolver()
+
     import elevation_plot_generator as elev_gen
     import energy_plot_generator as energy_gen
     import time_zone_converter as tz_conv
-    from app.main import app
 
     router = APIRouter()
 
@@ -263,9 +325,16 @@ def create_app():
             return {"miejsce1": miejsce1, "miejsce2": miejsce2}
         except Exception as exc:
             traceback.print_exc()
-            return JSONResponse(status_code=400, content={"error": str(exc)})
+            lata = _dostepne_lata_csv()
+            msg = str(exc)
+            if ("2025" in msg or "2027" in msg) and lata:
+                msg = (
+                    f"{msg} — Pamiętaj, że data lokalna jest przeliczana na UTC "
+                    f"(np. 2026-01-01 00:00 w UTC+1 to 2025-12-31 23:00 UTC). "
+                    f"Dostępne pliki w coords/: {', '.join(lata)}."
+                )
+            return JSONResponse(status_code=400, content={"error": msg})
 
-    # Wstaw trasy API przed montowaniem StaticFiles("/")
     mount_idx = next(
         (i for i, r in enumerate(app.router.routes) if getattr(r, "path", None) in ("", "/")),
         len(app.router.routes),
