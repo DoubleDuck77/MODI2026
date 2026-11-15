@@ -106,6 +106,55 @@
       gap: clamp(16px, 2.2vw, 26px);
     }
 
+    /* --- Pasek nagłówka z przyciskiem powrotu --- */
+    .title-bar {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .back-btn {
+      justify-self: start;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 16px;
+      background-color: #090b10;
+      color: #ffffff;
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      border-radius: 0;
+      font-family: inherit;
+      font-size: clamp(0.85rem, 1vw, 0.96rem);
+      font-weight: 500;
+      text-decoration: none;
+      cursor: pointer;
+      transition: background-color 0.15s ease, border-color 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .back-btn:hover {
+      background-color: rgba(255, 255, 255, 0.1);
+      border-color: #38bdf8;
+    }
+
+    .back-btn:focus-visible {
+      outline: 1px solid #38bdf8;
+      outline-offset: 2px;
+    }
+
+    @media (max-width: 960px) {
+      .title-bar {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .back-btn {
+        align-self: flex-start;
+      }
+    }
+
     /* --- Główny tytuł na samej górze --- */
     .main-title {
       margin: 0;
@@ -1089,7 +1138,10 @@
   </div>
 
   <header class="top-panel">
-    <h1 class="main-title">Oblicz położenie ciał niebieskich oraz ilość światła</h1>
+    <div class="title-bar">
+      <a href="sim.html" class="back-btn">← Powrót</a>
+      <h1 class="main-title">Oblicz położenie ciał niebieskich oraz ilość światła</h1>
+    </div>
 
     <div class="options-section">
       <p class="options-prompt">Wybierz wykres:</p>
@@ -1614,7 +1666,7 @@
         }
       } else if (wymagajWypelnienia || latInput.validity.badInput) {
         latInput.classList.add("input-error");
-        bledy.push(`Podaj poprawną szerokość geograficzna ${nazwaMiejsca} (od -90° do 90°).`);
+        bledy.push(`Podaj poprawną szerokość geograficzną ${nazwaMiejsca} (od -90° do 90°).`);
       }
 
       if (lonRaw !== "") {
@@ -1625,7 +1677,7 @@
         }
       } else if (wymagajWypelnienia || lonInput.validity.badInput) {
         lonInput.classList.add("input-error");
-        bledy.push(`Podaj poprawną długość geograficzna ${nazwaMiejsca} (od -180° do 180°).`);
+        bledy.push(`Podaj poprawną długość geograficzną ${nazwaMiejsca} (od -180° do 180°).`);
       }
 
       if (bledy.length > 0) {
@@ -1745,72 +1797,18 @@
       return false;
     }
 
-    function wyciagnijSlownikZPythona(kodPythona, nazwaZmiennej) {
-      const startVar = kodPythona.indexOf(nazwaZmiennej);
-      if (startVar === -1) throw new Error(`Nie znaleziono zmiennej ${nazwaZmiennej}`);
-
-      const eqIndex = kodPythona.indexOf("=", startVar);
-      const braceStart = kodPythona.indexOf("{", eqIndex);
-      if (braceStart === -1) throw new Error(`Brak bloku '{' dla ${nazwaZmiennej}`);
-
-      let glebokosc = 0;
-      let wCudzyslowie = false;
-      let ucieczka = false;
-      let braceEnd = -1;
-
-      for (let i = braceStart; i < kodPythona.length; i++) {
-        const znak = kodPythona[i];
-        if (ucieczka) {
-          ucieczka = false;
-          continue;
-        }
-        if (znak === "\\") {
-          ucieczka = true;
-          continue;
-        }
-        if (znak === '"') {
-          wCudzyslowie = !wCudzyslowie;
-          continue;
-        }
-        if (!wCudzyslowie) {
-          if (znak === "{") glebokosc++;
-          else if (znak === "}") {
-            glebokosc--;
-            if (glebokosc === 0) {
-              braceEnd = i;
-              break;
-            }
-          }
-        }
-      }
-
-      if (braceEnd === -1) throw new Error(`Niedomknięty słownik ${nazwaZmiennej}`);
-      const jsonStr = kodPythona
-        .slice(braceStart, braceEnd + 1)
-        .replace(/,\s*([}\]])/g, "$1");
-      return JSON.parse(jsonStr);
-    }
-
     async function zaladujStrefyCzasowe() {
       try {
         const respApi = await fetch("/api/strefy");
-        if (!respApi.ok) throw new Error("Brak endpointu /api/strefy");
+        if (!respApi.ok) throw new Error(`Błąd HTTP ${respApi.status}`);
         const dane = await respApi.json();
         krajeIStrefyIana = dane.kraje;
         regionyIStrefyIana = dane.regiony;
-      } catch {
-        try {
-          const respPy = await fetch("time_zone_converter.py");
-          if (!respPy.ok) throw new Error("Nie można pobrać time_zone_converter.py");
-          const kodPy = await respPy.text();
-          krajeIStrefyIana = wyciagnijSlownikZPythona(kodPy, "kraje_i_strefy_iana");
-          regionyIStrefyIana = wyciagnijSlownikZPythona(kodPy, "regiony_i_strefy_iana");
-        } catch (err) {
-          tzStatus.textContent =
-            "Nie udało się wczytać danych z time_zone_converter.py. Uruchom 'python server.py' w folderze projektu i otwórz http://127.0.0.1:8000";
-          tzStatus.classList.remove("hidden");
-          return;
-        }
+      } catch (err) {
+        tzStatus.textContent =
+          "Nie udało się wczytać stref czasowych z /api/strefy. Uruchom 'py -3.12 run_local.py' i otwórz http://127.0.0.1:8000/dwa%20wykresy.html";
+        tzStatus.classList.remove("hidden");
+        return;
       }
 
       countrySelect.innerHTML = '<option value="">kraj</option>';
@@ -2950,7 +2948,7 @@
       if (liczbaWykresow === 2 && stanWykresow[2]) rysujCanvasWykresu(2, null);
     });
 
-    // --- Komunikacja z backendem Pythona i odświeżanie wykresów ---
+    // --- Komunikacja z backendem FastAPI (run_local.py) ---
     let czyByloJuzGenerowane = false;
     let timerDebounce = null;
     let kontrolerZapytania = null;
@@ -3067,7 +3065,7 @@
         const msg = normalizujKomunikatBleduSerwera(err.message || String(err));
         if (msg.includes("Failed to fetch") || msg.includes("404") || msg.includes("405") || msg.includes("501")) {
           plotStatus.textContent =
-            "Brak połączenia z endpointem /api/wykresy. Uruchom 'python server.py' w folderze projektu i otwórz http://127.0.0.1:8000";
+            "Brak połączenia z endpointem /api/wykresy. Uruchom 'py -3.12 run_local.py' i otwórz http://127.0.0.1:8000/dwa%20wykresy.html";
         } else if (msg.startsWith("Wyszedłeś poza")) {
           plotStatus.textContent = msg;
         } else {
