@@ -6,3 +6,6 @@ coords
 *.npz
 *.png
 .venv
+lunar_pds_data
+lunar_resource_maps
+lunar_roi_exports

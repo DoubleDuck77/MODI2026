@@ -9,8 +9,12 @@ services:
       - ./frontend:/srv/frontend
       - ./newlunar.py:/srv/newlunar.py:ro
       - ./neworb.py:/srv/neworb.py:ro
+      - ./geografia.py:/srv/geografia.py:ro
+      - ./radius.py:/srv/radius.py:ro
+      - ./generator.py:/srv/generator.py:ro
       - ./Textures:/data/textures:ro
       - ./coords:/data/coords:ro
+      - ./lunar_pds_data:/data/pds:ro
     command: >
       uvicorn app.main:app --host 0.0.0.0 --port 8000
       --reload --reload-dir /srv/backend/app --reload-dir /srv/contracts

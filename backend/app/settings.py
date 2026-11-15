@@ -13,7 +13,8 @@ class Settings:
     frontend_dir: Path
     textures_dir: Path
     coords_dir: Path
-    scripts_dir: Path  # katalog z root-skryptami (newlunar.py, neworb.py)
+    scripts_dir: Path  # katalog z root-skryptami (newlunar.py, neworb.py, geografia.py, radius.py)
+    pds_data_dir: Path  # mapy zasobów PDS (lunar_pds_data)
 
     @property
     def examples_dir(self) -> Path:
@@ -30,4 +31,5 @@ class Settings:
             textures_dir=path("MODI_TEXTURES_DIR", "Textures"),
             coords_dir=path("MODI_COORDS_DIR", "coords"),
             scripts_dir=path("MODI_SCRIPTS_DIR", "."),
+            pds_data_dir=path("MODI_PDS_DATA_DIR", "lunar_pds_data"),
         )

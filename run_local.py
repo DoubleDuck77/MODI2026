@@ -32,6 +32,9 @@ REQUIRED_DATA = (
     "Textures/moon_dem_nasa_16ppd_v3.npy",
     "Textures/moon_color_nasa_8k_v3.npy",
     "coords/2026.csv",
+    "Textures/moon_color.jpg",
+    "lunar_pds_data/ironhd.txt",
+    "lunar_pds_data/thoriumhd.txt",
 )
 STAMP = VENV / "requirements.sha256"
 

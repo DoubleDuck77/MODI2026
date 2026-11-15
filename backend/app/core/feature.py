@@ -1,8 +1,9 @@
 """Deskryptory modułu i endpointu. Każdy moduł wystawia ``FEATURE = FeatureModule(...)``."""
 
 from dataclasses import dataclass
-from typing import Optional, Tuple, Type
+from typing import Callable, Optional, Tuple, Type
 
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.core.contracts import FeatureResponse, TimeDependency, View
@@ -30,12 +31,20 @@ class Endpoint:
 
 @dataclass(frozen=True)
 class FeatureModule:
+    """Deskryptor modułu.
+
+    ``extra_routes`` służy wyłącznie do danych binarnych (kafle, obrazy): router dostaje
+    fasadę modułu i jest montowany pod ``/api/v1/{id}/…``. Tych tras nie ma w manifeście
+    ani w ``/frame`` i nie mają przykładów kontraktu; dane JSON idą zwykłymi ``endpoints``.
+    """
+
     id: str
     title: str
     description: str
     view: View
     facade: Type[BaseFacade]
     endpoints: Tuple[Endpoint, ...]
+    extra_routes: Optional[Callable[[BaseFacade], APIRouter]] = None
 
     def key(self, ep: Endpoint) -> str:
         return f"{self.id}.{ep.name}"

@@ -60,6 +60,13 @@ def build_feature_router(registry: FeatureRegistry) -> APIRouter:
                 summary=ep.summary or key,
                 tags=[feature.id],
             )
+        if feature.extra_routes is not None:
+            # Trasy binarne: poza manifestem i /frame, bez przykładów kontraktu.
+            router.include_router(
+                feature.extra_routes(registry.facade(feature.id)),
+                prefix=f"/{feature.id}",
+                tags=[feature.id],
+            )
     return router
 
 

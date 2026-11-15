@@ -15,6 +15,7 @@ services:
     volumes:
       - ./Textures:/data/textures:ro
       - ./coords:/data/coords:ro
+      - ./lunar_pds_data:/data/pds:ro
     # Bez --reload. '*' jest bezpieczne, bo port słucha tylko na loopbacku: nagłówki
     # X-Forwarded-* może ustawić wyłącznie nginx z .3. Ruch przychodzi z bramy dockera (172.x),
     # więc domyślne 127.0.0.1 by je ignorowało.
