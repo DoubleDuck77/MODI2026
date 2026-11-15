@@ -1666,7 +1666,7 @@
         }
       } else if (wymagajWypelnienia || latInput.validity.badInput) {
         latInput.classList.add("input-error");
-        bledy.push(`Podaj poprawną szerokość geograficzna ${nazwaMiejsca} (od -90° do 90°).`);
+        bledy.push(`Podaj poprawną szerokość geograficzną ${nazwaMiejsca} (od -90° do 90°).`);
       }
 
       if (lonRaw !== "") {
@@ -1677,7 +1677,7 @@
         }
       } else if (wymagajWypelnienia || lonInput.validity.badInput) {
         lonInput.classList.add("input-error");
-        bledy.push(`Podaj poprawną długość geograficzna ${nazwaMiejsca} (od -180° do 180°).`);
+        bledy.push(`Podaj poprawną długość geograficzną ${nazwaMiejsca} (od -180° do 180°).`);
       }
 
       if (bledy.length > 0) {
@@ -1797,72 +1797,18 @@
       return false;
     }
 
-    function wyciagnijSlownikZPythona(kodPythona, nazwaZmiennej) {
-      const startVar = kodPythona.indexOf(nazwaZmiennej);
-      if (startVar === -1) throw new Error(`Nie znaleziono zmiennej ${nazwaZmiennej}`);
-
-      const eqIndex = kodPythona.indexOf("=", startVar);
-      const braceStart = kodPythona.indexOf("{", eqIndex);
-      if (braceStart === -1) throw new Error(`Brak bloku '{' dla ${nazwaZmiennej}`);
-
-      let glebokosc = 0;
-      let wCudzyslowie = false;
-      let ucieczka = false;
-      let braceEnd = -1;
-
-      for (let i = braceStart; i < kodPythona.length; i++) {
-        const znak = kodPythona[i];
-        if (ucieczka) {
-          ucieczka = false;
-          continue;
-        }
-        if (znak === "\\") {
-          ucieczka = true;
-          continue;
-        }
-        if (znak === '"') {
-          wCudzyslowie = !wCudzyslowie;
-          continue;
-        }
-        if (!wCudzyslowie) {
-          if (znak === "{") glebokosc++;
-          else if (znak === "}") {
-            glebokosc--;
-            if (glebokosc === 0) {
-              braceEnd = i;
-              break;
-            }
-          }
-        }
-      }
-
-      if (braceEnd === -1) throw new Error(`Niedomknięty słownik ${nazwaZmiennej}`);
-      const jsonStr = kodPythona
-        .slice(braceStart, braceEnd + 1)
-        .replace(/,\s*([}\]])/g, "$1");
-      return JSON.parse(jsonStr);
-    }
-
     async function zaladujStrefyCzasowe() {
       try {
-        const respApi = await fetch("../api/strefy");
-        if (!respApi.ok) throw new Error("Brak endpointu ../api/strefy");
+        const respApi = await fetch("/api/strefy");
+        if (!respApi.ok) throw new Error(`Błąd HTTP ${respApi.status}`);
         const dane = await respApi.json();
         krajeIStrefyIana = dane.kraje;
         regionyIStrefyIana = dane.regiony;
-      } catch {
-        try {
-          const respPy = await fetch("../time_zone_converter.py");
-          if (!respPy.ok) throw new Error("Nie można pobrać ../time_zone_converter.py");
-          const kodPy = await respPy.text();
-          krajeIStrefyIana = wyciagnijSlownikZPythona(kodPy, "kraje_i_strefy_iana");
-          regionyIStrefyIana = wyciagnijSlownikZPythona(kodPy, "regiony_i_strefy_iana");
-        } catch (err) {
-          tzStatus.textContent =
-            "Nie udało się wczytać danych z ../time_zone_converter.py. Uruchom 'python ../server.py' w folderze nadrzędnym projektu i otwórz http://127.0.0.1:8000";
-          tzStatus.classList.remove("hidden");
-          return;
-        }
+      } catch (err) {
+        tzStatus.textContent =
+          "Nie udało się wczytać stref czasowych z /api/strefy. Uruchom 'py -3.12 run_local.py' i otwórz http://127.0.0.1:8000/dwa%20wykresy.html";
+        tzStatus.classList.remove("hidden");
+        return;
       }
 
       countrySelect.innerHTML = '<option value="">kraj</option>';
@@ -2341,7 +2287,7 @@
           data_koniec: endVal.replace("T", " "),
         };
 
-        const resp = await fetch("../api/wykresy", {
+        const resp = await fetch("/api/wykresy", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -3002,7 +2948,7 @@
       if (liczbaWykresow === 2 && stanWykresow[2]) rysujCanvasWykresu(2, null);
     });
 
-    // --- Komunikacja z backendem Pythona i odświeżanie wykresów ---
+    // --- Komunikacja z backendem FastAPI (run_local.py) ---
     let czyByloJuzGenerowane = false;
     let timerDebounce = null;
     let kontrolerZapytania = null;
@@ -3049,7 +2995,7 @@
       plotStatus.classList.add("info");
 
       try {
-        const resp = await fetch("../api/wykresy", {
+        const resp = await fetch("/api/wykresy", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(params),
@@ -3119,7 +3065,7 @@
         const msg = normalizujKomunikatBleduSerwera(err.message || String(err));
         if (msg.includes("Failed to fetch") || msg.includes("404") || msg.includes("405") || msg.includes("501")) {
           plotStatus.textContent =
-            "Brak połączenia z endpointem ../api/wykresy. Uruchom 'python ../server.py' w folderze nadrzędnym projektu i otwórz http://127.0.0.1:8000";
+            "Brak połączenia z endpointem /api/wykresy. Uruchom 'py -3.12 run_local.py' i otwórz http://127.0.0.1:8000/dwa%20wykresy.html";
         } else if (msg.startsWith("Wyszedłeś poza")) {
           plotStatus.textContent = msg;
         } else {
