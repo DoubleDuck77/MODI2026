@@ -1,0 +1,27 @@
+/* Tryb Zasoby (port radius.py): mapa + pasek kolorów po lewej, wykresy po prawej, sterowanie pod mapą. */
+.res-root { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 0; background: #12151a; color: #c9d1d9; }
+.res-left { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-width: 0; min-height: 0; }
+.res-root .res-map, .res-root .res-charts { display: block; width: 100%; height: 100%; min-height: 0; }
+.res-right { min-width: 0; min-height: 0; }
+.res-controls { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 16px; padding: 4px 10px 10px 45px; font: 13px var(--font); }
+.res-radio { margin: 0; padding: 6px 8px; background: #181c23; border: 1px solid #30363d; border-radius: 4px; display: grid; gap: 1px; align-content: start; }
+.res-radio legend { color: #e6edf3; padding: 0 4px; font-size: 13px; }
+.res-radio label { color: #d0d7de; font-size: 12px; cursor: pointer; }
+.res-radio input { accent-color: #58a6ff; }
+.res-main { min-width: 0; }
+.res-main .sim-slider span { color: #e6edf3; }
+.res-main .sim-slider.res-lat input, .res-main .sim-slider.res-lon input { accent-color: #388bfd; }
+.res-main .sim-slider.res-rad input { accent-color: #f78166; }
+.res-buttons { display: flex; gap: 12px; margin-top: 8px; }
+.res-buttons button { flex: 1; padding: 8px 6px; border: 1px solid #30363d; border-radius: 4px; font: bold 13px var(--font); cursor: pointer; color: #e6edf3; background: #30363d; }
+.res-buttons button:hover { background: #484f58; }
+.res-buttons .res-csv { background: #238636; color: #fff; }
+.res-buttons .res-csv:hover { background: #2ea043; }
+.res-status { margin-top: 6px; min-height: 1.4em; color: #7ee787; font-size: 12px; overflow-wrap: anywhere; }
+.res-status.res-error { color: #ff7b72; }
+.res-loading { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(18, 21, 26, 0.88); color: #e6edf3; font: 600 18px var(--font); z-index: 5; }
+.res-loading[hidden] { display: none; }
+@media (max-width: 900px) {
+  .res-root { grid-template-columns: 1fr; overflow: auto; grid-auto-rows: minmax(420px, auto); }
+  .res-controls { grid-template-columns: 1fr; padding-left: 10px; }
+}

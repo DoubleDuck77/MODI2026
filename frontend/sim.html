@@ -7,6 +7,7 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/css/main.css">
   <link rel="stylesheet" href="/css/sim.css">
+  <link rel="stylesheet" href="/css/resources.css">
   <script type="importmap">
     {
       "imports": {
@@ -20,8 +21,9 @@
   <header class="toolbar">
     <h1 class="brand">MODI 2026 <span>Symulacje</span></h1>
     <nav class="mode-switch" aria-label="Tryb symulacji">
-      <button id="mode-surface" type="button" data-mode="surface" aria-pressed="false">Powierzchnia <small>newlunar</small></button>
+      <button id="mode-surface" type="button" data-mode="surface" aria-pressed="false">Powierzchnia</button>
       <button id="mode-orbit" type="button" data-mode="orbit" aria-pressed="false">Orbita <small>neworb</small></button>
+      <button id="mode-resources" type="button" data-mode="resources" aria-pressed="false">Zasoby <small>radius</small></button>
     </nav>
     <div class="controls">
       <button id="sim-play-btn" type="button" aria-pressed="false">▶ Play</button>
@@ -33,6 +35,7 @@
   <main class="sim-viewport">
     <section id="mode-surface-root" class="sim-mode" data-mode="surface" hidden aria-label="Widok z powierzchni Księżyca"></section>
     <section id="mode-orbit-root" class="sim-mode" data-mode="orbit" hidden aria-label="Symulator orbit"></section>
+    <section id="mode-resources-root" class="sim-mode" data-mode="resources" hidden aria-label="Zasoby Księżyca w promieniu R"></section>
     <p id="sim-error" class="sim-error" hidden></p>
   </main>
 

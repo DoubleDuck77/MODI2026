@@ -1,4 +1,4 @@
-// Strona /sim.html: manifest → wspólny zegar → leniwie tworzone tryby (Powierzchnia / Orbita).
+// Strona /sim.html: manifest → wspólny zegar → leniwie tworzone tryby (Powierzchnia / Orbita / Zasoby).
 // Tylko aktywny tryb ma pętlę rysowania i klawiaturę; tryb zapamiętany w location.hash.
 
 import { ApiClient } from '/js/core/api-client.js';
@@ -7,6 +7,7 @@ import { SIM_END, SIM_START, SimulationClock } from '/js/core/clock.js';
 const MODES = {
   surface: () => import('./surface/surface-mode.js').then((m) => m.createSurfaceMode),
   orbit: () => import('./orbit/orbit-mode.js').then((m) => m.createOrbitMode),
+  resources: () => import('./resources/resources-mode.js').then((m) => m.createResourcesMode),
 };
 const toInputValue = (ms) => new Date(ms).toISOString().slice(0, 16); // datetime-local jako UTC
 
